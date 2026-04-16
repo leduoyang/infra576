@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv
+venv/
+ENV/
+
+# OS
+.DS_Store
+
+# Project specific
+*_segments.json
+tests/e2e_videos/
+tmp/
