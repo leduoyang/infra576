@@ -56,15 +56,11 @@ function segClass(type) {
     intro:         'intro',
     outro:         'outro',
     ad:            'ad',
-    recap:         'recap',
-    transition:    'transition',
-    dead_air:      'dead_air',
-    holding_screen:'holding_screen',
-    self_promotion:'self_promotion',
     non_content:   'ad',
   };
   return map[type] || 'ad';
 }
+
 
 function isNonContent(seg) {
   return seg.type === 'non_content' || seg.type !== 'video_content';
@@ -113,21 +109,25 @@ document.getElementById('load-json').addEventListener('change', e => {
 function loadMetadata(meta) {
   state.meta = meta;
   state.segments = meta.timeline_segments || [];
-  state.duration = meta.original_video_duration_seconds || 0;
+  // Crucial: Use output_duration_seconds to align with the actual video file
+  state.duration = meta.output_duration_seconds || meta.original_video_duration_seconds || 0;
 
-  // Stats
-  const nc = (meta.non_content_segments || []).length;
-  const total_nc_dur = meta.total_non_content_duration_seconds || 0;
+  // Derive stats from timeline segments to ensure consistency with the view
+  const nc_segments = state.segments.filter(s => isNonContent(s));
+  const nc_count = nc_segments.length;
+  const total_nc_dur = nc_segments.reduce((acc, s) => acc + (s.duration_seconds || 0), 0);
+  
   panelStats.classList.remove('hidden');
   emptyPanel.style.display = 'none';
   statDuration.textContent = formatTime(state.duration);
-  statNc.textContent = nc > 0 ? `${nc} (${formatTime(total_nc_dur)})` : '0';
+  statNc.textContent = nc_count > 0 ? `${nc_count} (${formatTime(total_nc_dur)})` : '0';
   statSegs.textContent = state.segments.length;
 
   renderSegmentList();
   renderTimeline();
   renderProgressOverlays();
 }
+
 
 // ─── Segment List Panel ──────────────────────────────────────────────────────
 function renderSegmentList() {
@@ -289,15 +289,23 @@ video.addEventListener('timeupdate', () => {
   }
 
   // Mode logic
-  if (state.mode === 'content-only' || state.mode === 'skip-noncontent') {
+  if (state.mode === 'content-only') {
     const seg = state.segments[idx];
     if (seg && isNonContent(seg)) {
       // Skip to end of this segment
       const endTime = seg.final_video_end_seconds || t;
       video.currentTime = endTime;
     }
+  } else if (state.mode === 'noncontent-only') {
+    const seg = state.segments[idx];
+    if (seg && !isNonContent(seg)) {
+      // Skip to end of this segment
+      const endTime = seg.final_video_end_seconds || t;
+      video.currentTime = endTime;
+    }
   }
 });
+
 
 video.addEventListener('loadedmetadata', () => {
   if (!state.duration) state.duration = video.duration;
@@ -336,10 +344,16 @@ progressBg.addEventListener('click', e => {
 function setMode(m) {
   state.mode = m;
   btnContent.classList.toggle('active', m === 'content-only');
-  btnSkipNc.classList.toggle('active', m === 'skip-noncontent');
+  btnSkipNc.classList.toggle('active', m === 'noncontent-only');
   btnNormal.classList.toggle('active', m === 'normal');
-  toast(`Mode: ${m === 'normal' ? 'Normal' : m === 'content-only' ? 'Content Only' : 'Skip Non-Content'}`);
+  const labels = {
+    'normal': 'Normal',
+    'content-only': 'Content Only',
+    'noncontent-only': 'Non-Content Only'
+  };
+  toast(`Mode: ${labels[m]}`);
 }
+
 
 btnContent.addEventListener('click', () => {
   setMode(state.mode === 'content-only' ? 'normal' : 'content-only');
@@ -352,9 +366,15 @@ btnContent.addEventListener('click', () => {
 });
 
 btnSkipNc.addEventListener('click', () => {
-  setMode(state.mode === 'skip-noncontent' ? 'normal' : 'skip-noncontent');
-  if (state.mode === 'skip-noncontent') video.play();
+  setMode(state.mode === 'noncontent-only' ? 'normal' : 'noncontent-only');
+  if (state.mode === 'noncontent-only') {
+    // Jump to first ad segment
+    const first = state.segments.findIndex(s => isNonContent(s));
+    if (first >= 0) seekToSegment(first);
+    video.play();
+  }
 });
+
 
 btnNormal.addEventListener('click', () => setMode('normal'));
 
