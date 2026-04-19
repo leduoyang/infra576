@@ -128,6 +128,39 @@ def _cluster_contrast_score(centroid: np.ndarray) -> float:
             + centroid[_COL_EDGES]
             - centroid[_COL_DELTA_RMS])
 
+def _dynamic_kmeans(X: np.ndarray, max_k: int = 12) -> tuple[int, np.ndarray, np.ndarray]:
+    """
+    Find optimal K using the Elbow method (maximum distance to the scale-invariant secant line).
+    """
+    inertias = []
+    results = []
+    ks = list(range(2, min(len(X), max_k + 1)))
+    
+    if len(ks) < 3:
+        k = ks[-1] if ks else 2
+        labels, centroids = _kmeans(X, k=k)
+        return k, labels, centroids
+        
+    for k in ks:
+        labels, centroids = _kmeans(X, k=k)
+        dists = np.sum((X - centroids[labels])**2, axis=1)
+        inertias.append(np.sum(dists))
+        results.append((labels, centroids))
+        
+    inertias = np.array(inertias)
+    k_array = np.array(ks)
+    
+    y_norm = (inertias - inertias.min()) / (inertias.max() - inertias.min() + 1e-9)
+    x_norm = (k_array - k_array.min()) / (k_array.max() - k_array.min() + 1e-9)
+    
+    distances = np.abs(x_norm + y_norm - 1.0)
+    best_idx = np.argmax(distances)
+    
+    optimal_k = ks[best_idx]
+    opt_labels, opt_centroids = results[best_idx]
+    
+    return int(optimal_k), opt_labels, opt_centroids
+
 # ---------------------------------------------------------------------------
 # Step 4: Deterministic labeling — D mod 15 ≈ 0
 # ---------------------------------------------------------------------------
@@ -181,6 +214,67 @@ def _sequence_validate(segments: list[dict]) -> list[dict]:
     return segments
 
 # ---------------------------------------------------------------------------
+# Step 6: Audio Fingerprint Post-Processing
+# ---------------------------------------------------------------------------
+
+def _audio_fingerprint_override(segments: list[dict], windows: list[dict]) -> list[dict]:
+    """
+    Identify the host's voice by calculating the mean Spectral Centroid and Bandwidth
+    of all Content segments. If any Ad segment matches this fingerprint with <5% variance,
+    label it as a 'sponsored_segment' and override it to be content.
+    """
+    content_centroids = []
+    content_bandwidths = []
+    
+    for seg in segments:
+        if not seg.get("is_content", False):
+            continue
+        for w in windows:
+            mid = w["start_seconds"] + (w["duration_seconds"] / 2.0)
+            if seg["start_seconds"] <= mid <= seg["end_seconds"]:
+                sc = w.get("spectral_centroid", 0.0)
+                sb = w.get("spectral_bandwidth", 0.0)
+                if sc > 0 and sb > 0:
+                    content_centroids.append(sc)
+                    content_bandwidths.append(sb)
+                    
+    if not content_centroids:
+        return segments  # Cannot establish a baseline
+        
+    master_sc = float(np.mean(content_centroids))
+    master_sb = float(np.mean(content_bandwidths))
+    
+    for seg in segments:
+        if seg.get("is_content", False):
+            continue
+            
+        ad_sc = []
+        ad_sb = []
+        for w in windows:
+            mid = w["start_seconds"] + (w["duration_seconds"] / 2.0)
+            if seg["start_seconds"] <= mid <= seg["end_seconds"]:
+                sc = w.get("spectral_centroid", 0.0)
+                sb = w.get("spectral_bandwidth", 0.0)
+                if sc > 0 and sb > 0:
+                    ad_sc.append(sc)
+                    ad_sb.append(sb)
+                    
+        if not ad_sc:
+            continue
+            
+        seg_sc = float(np.mean(ad_sc))
+        seg_sb = float(np.mean(ad_sb))
+        
+        var_sc = abs(seg_sc - master_sc) / (master_sc + 1e-9)
+        var_sb = abs(seg_sb - master_sb) / (master_sb + 1e-9)
+        
+        if var_sc <= 0.05 and var_sb <= 0.05:
+            seg["is_content"] = True
+            seg["segment_type"] = "sponsored_segment"
+            
+    return segments
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -197,9 +291,8 @@ def classify_segments(windows: list[dict], duration: float,
     X_raw = _build_feature_matrix(windows)
     X     = _normalise(X_raw)
 
-    # ---- 2. K-Means (K=10) on individual windows -----------------------
-    K_CLUSTERS = 10
-    raw_labels, centroids = _kmeans(X, k=K_CLUSTERS)
+    # ---- 2. Dynamic K-Means on individual windows ---------------------
+    K_CLUSTERS, raw_labels, centroids = _dynamic_kmeans(X, max_k=12)
 
     # ---- 3. Label Smoothing (Median Filter) ----------------------------
     # Smooths isolated false positive windows (e.g., [1, 0, 1] -> [1, 1, 1])
@@ -292,14 +385,15 @@ def classify_segments(windows: list[dict], duration: float,
         })
         
     classified = _sequence_validate(classified)
+    classified = _audio_fingerprint_override(classified, windows)
 
-    # Assign final intro/outro types
+    # Assign final types
     for i, seg in enumerate(classified):
+        if "segment_type" in seg:
+            continue
         if seg["is_content"]:
             seg["segment_type"] = "video_content"
         else:
-            if i == 0: seg["segment_type"] = "intro"
-            elif i == len(classified) - 1: seg["segment_type"] = "outro"
-            else: seg["segment_type"] = "ad"
+            seg["segment_type"] = "ad"
             
     return classified
