@@ -14,40 +14,44 @@ import numpy as np
 # Step 3: K-Means clustering (pure numpy, Lloyd's algorithm)
 # ---------------------------------------------------------------------------
 
-def _build_feature_matrix(segments: list[dict]) -> np.ndarray:
-    """
-    Build an N×8 feature matrix from per-segment data.
+_COL_DELTA_AE  = 0
+_COL_ZCR       = 1
+_COL_DELTA_MEV = 2
+_COL_EDGES     = 3
+_COL_PACING    = 4
+_COL_DELTA_RMS = 5
 
-    Features (normalised internally via z-score before clustering):
-      0 – pacing_score          : shot boundary frequency (cuts/min proxy)
-      1 – audio_rms_variance    : variance of per-frame RMS  → dynamic range
-                                  (ads are compressed → LOW variance)
-      2 – audio_energy          : mean RMS loudness
-                                  (ads are uniformly LOUD)
-      3 – zcr_mean              : Zero-Crossing Rate → noisiness
-                                  (excited speech / music in ads = HIGH)
-      4 – spatial_edge_density  : fraction of Canny edge pixels across segment
-                                  (on-screen text / motion graphics in ads = HIGH)
-      5 – motion_energy_variance: variance of per-frame SAD scores → freneticism
-                                  (fast-cutting / shaky ads = HIGH)
-      6 – median_sat_lum        : (median_S + median_V) / 2 → HSV Color Volume
-                                  (ads are graded to 'pop' → HIGH)
-      7 – duration_seconds      : absolute segment length
-                                  (commercials are short → LOW)
-    """
-    rows = []
-    for seg in segments:
-        sbf    = float(seg.get("pacing_score",         0.0))
-        armsv  = float(seg.get("audio_rms_variance",   0.0))
-        ae     = float(seg.get("audio_energy",         0.0))
-        zcr    = float(seg.get("zcr_mean",             0.0))
-        sed    = float(seg.get("spatial_edge_density", 0.0))
-        mev    = float(seg.get("motion_energy_variance", 0.0))
-        sl     = (float(seg.get("avg_saturation", 0.0)) +
-                  float(seg.get("avg_luminance",  0.0))) / 2.0
-        dur    = float(seg.get("duration_seconds", 0.0))
-        rows.append([sbf, armsv, ae, zcr, sed, mev, sl, dur])
-    return np.array(rows, dtype=np.float64)
+def _build_feature_matrix(windows: list[dict]) -> np.ndarray:
+    import scipy.ndimage
+    
+    ae_raw  = np.array([float(w.get("audio_energy", 0.0)) for w in windows])
+    zcr_raw = np.array([float(w.get("zcr_mean", 0.0)) for w in windows])
+    mev_raw = np.array([float(w.get("motion_energy_variance", 0.0)) for w in windows])
+    edg_raw = np.array([float(w.get("spatial_edge_density", 0.0)) for w in windows])
+    pac_raw = np.array([float(w.get("pacing_score", 0.0)) for w in windows])
+    rms_raw = np.array([float(w.get("audio_rms_variance", 0.0)) for w in windows])
+
+    # 5-minute rolling median (assuming 5s steps => 60 windows)
+    k_size = 60
+    ae_med  = scipy.ndimage.median_filter(ae_raw,  size=k_size)
+    mev_med = scipy.ndimage.median_filter(mev_raw, size=k_size)
+    rms_med = scipy.ndimage.median_filter(rms_raw, size=k_size)
+
+    # Compute deltas
+    delta_ae  = ae_raw - ae_med
+    delta_mev = mev_raw - mev_med
+    delta_rms = rms_raw - rms_med
+
+    X = np.stack([
+        delta_ae,
+        zcr_raw,
+        delta_mev,
+        edg_raw,
+        pac_raw,
+        delta_rms
+    ], axis=1)
+
+    return X
 
 
 def _normalise(X: np.ndarray) -> np.ndarray:
@@ -58,18 +62,19 @@ def _normalise(X: np.ndarray) -> np.ndarray:
     return (X - mu) / std
 
 
-def _kmeans(X: np.ndarray, k: int = 2, max_iter: int = 100, n_init: int = 10,
-            seed: int = 42) -> np.ndarray:
+def _kmeans(X: np.ndarray, k: int = 6, max_iter: int = 100, n_init: int = 10,
+            seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     """
     Lloyd's K-Means with multiple random restarts.
-    Returns label array of shape (N,).
+    Returns label array of shape (N,) and centroids of shape (K, D).
     """
     rng = np.random.default_rng(seed)
     n   = len(X)
     if n <= k:
-        return np.arange(n, dtype=int)
+        return np.arange(n, dtype=int), X
 
     best_labels = None
+    best_centroids = None
     best_inertia = np.inf
 
     for _ in range(n_init):
@@ -78,7 +83,12 @@ def _kmeans(X: np.ndarray, k: int = 2, max_iter: int = 100, n_init: int = 10,
         centroids = [X[idx0]]
         for _c in range(1, k):
             dists = np.array([min(np.sum((x - c) ** 2) for c in centroids) for x in X])
-            probs = dists / (dists.sum() + 1e-12)
+            s = dists.sum()
+            if s == 0:
+                probs = np.ones(n) / n
+            else:
+                probs = dists / s
+            probs = probs / probs.sum()  # ensure perfect sum to 1.0
             centroids.append(X[rng.choice(n, p=probs)])
         centroids = np.array(centroids)
 
@@ -103,9 +113,20 @@ def _kmeans(X: np.ndarray, k: int = 2, max_iter: int = 100, n_init: int = 10,
         if inertia < best_inertia:
             best_inertia = inertia
             best_labels  = labels.copy()
+            best_centroids = np.array(centroids)
 
-    return best_labels
+    return best_labels, best_centroids
 
+
+def _cluster_contrast_score(centroid: np.ndarray) -> float:
+    """
+    Compute a contrast-based ad-likelihood score from a Z-score centroid.
+    contrast_score = abs(ΔAE) + abs(ΔMEV) + Edges – ΔRMS_Var
+    """
+    return (abs(centroid[_COL_DELTA_AE])
+            + abs(centroid[_COL_DELTA_MEV])
+            + centroid[_COL_EDGES]
+            - centroid[_COL_DELTA_RMS])
 
 # ---------------------------------------------------------------------------
 # Step 4: Deterministic labeling — D mod 15 ≈ 0
@@ -113,7 +134,6 @@ def _kmeans(X: np.ndarray, k: int = 2, max_iter: int = 100, n_init: int = 10,
 _COMMERCIAL_LENGTHS = [15.0, 30.0, 45.0, 60.0]  # standard broadcast ad durations
 _DURATION_TOLERANCE = 2.0                  # ±2s for frame-rate rounding
 _MAX_COMMERCIAL_DURATION = 120.0           # no single ad block > 2 min
-
 
 def _is_commercial_duration(dur: float) -> bool:
     """Returns True if `dur` is within tolerance of a standard ad length.
@@ -130,7 +150,6 @@ def _is_commercial_duration(dur: float) -> bool:
 # ---------------------------------------------------------------------------
 _ISOLATION_CONTENT_THRESHOLD = 600.0   # 10 min of content on each side
 
-
 def _sequence_validate(segments: list[dict]) -> list[dict]:
     """
     Override isolated ad blocks that are completely surrounded by long content
@@ -139,31 +158,23 @@ def _sequence_validate(segments: list[dict]) -> list[dict]:
     Modifies segments in-place.
     """
     n = len(segments)
-
     for i in range(n):
         if segments[i]["is_content"]:
             continue
-
-        # Measure content duration to the left (before this ad)
         left_content = 0.0
         j = i - 1
         while j >= 0 and segments[j]["is_content"]:
             left_content += segments[j]["duration_seconds"]
             j -= 1
-
-        # Measure content duration to the right (after this ad)
         right_content = 0.0
         j = i + 1
         while j < n and segments[j]["is_content"]:
             right_content += segments[j]["duration_seconds"]
             j += 1
-
         if (left_content  >= _ISOLATION_CONTENT_THRESHOLD and
                 right_content >= _ISOLATION_CONTENT_THRESHOLD):
             segments[i]["is_content"] = True   # override: false positive
-
     return segments
-
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -182,8 +193,9 @@ def classify_segments(windows: list[dict], duration: float,
     X_raw = _build_feature_matrix(windows)
     X     = _normalise(X_raw)
 
-    # ---- 2. K-Means (K=2) on individual windows -----------------------
-    raw_labels = _kmeans(X, k=2)
+    # ---- 2. K-Means (K=6) on individual windows -----------------------
+    K_CLUSTERS = 6
+    raw_labels, centroids = _kmeans(X, k=K_CLUSTERS)
 
     # ---- 3. Label Smoothing (Median Filter) ----------------------------
     # Smooths isolated false positive windows (e.g., [1, 0, 1] -> [1, 1, 1])
@@ -222,9 +234,9 @@ def classify_segments(windows: list[dict], duration: float,
 
     # ---- 5. Duration Gate: identify Ad cluster from Macro Blocks -------
     ad_cluster = -1
-    k_num = 2
     scores = []
-    for j in range(k_num):
+    
+    for j in range(K_CLUSTERS):
         blocks_j = [b for b in macro_blocks if b["label"] == j]
         if not blocks_j:
             scores.append(0.0)
@@ -232,9 +244,10 @@ def classify_segments(windows: list[dict], duration: float,
         hits = sum(_is_commercial_duration(b["duration"]) for b in blocks_j)
         scores.append(hits / len(blocks_j))
 
-    best = int(np.argmax(scores))
-    if scores[best] >= 0.30:  # Relaxed from 0.50 to catch more valid clusters
-        ad_cluster = best
+    if scores:
+        best = int(np.argmax(scores))
+        if scores[best] >= 0.30:  # Modulo-15 base gate
+            ad_cluster = best
 
     # ---- 6. Assemble output -------
     classified = []
