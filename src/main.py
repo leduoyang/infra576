@@ -39,11 +39,11 @@ def run_pipeline(
 
     # 2. SEGMENTATION & FEATURE EXTRACTION (Steps 1 & 2)
     print(f"[2/4] Running slice-first segmentation and per-segment feature extraction...")
-    segments = run_segmentation_pipeline(video_path, metadata, scene_threshold)
+    segments, all_cuts = run_segmentation_pipeline(video_path, metadata, scene_threshold)
 
     # 3. CLASSIFICATION (Steps 3, 4 & 5: K-Means, duration gate, sequence validation)
     print(f"[3/4] Running K-Means classification...")
-    classified_segments = classify_segments(segments, metadata["duration_seconds"])
+    classified_segments = classify_segments(segments, metadata["duration_seconds"], all_cuts=all_cuts)
 
     # 4. EXPORT
     print(f"[4/4] Building and exporting results to {output_path}...")

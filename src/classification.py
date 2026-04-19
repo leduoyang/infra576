@@ -170,7 +170,8 @@ def _sequence_validate(segments: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def classify_segments(windows: list[dict], duration: float,
-                      global_profile: dict = None) -> list[dict]:
+                      global_profile: dict = None,
+                      all_cuts: list[float] = None) -> list[dict]:
     """
     5-step classification pipeline for overlapping windows.
     """
@@ -237,12 +238,31 @@ def classify_segments(windows: list[dict], duration: float,
 
     # ---- 6. Assemble output -------
     classified = []
+    
+    def snap(target: float, points: list[float], threshold=5.0):
+        if not points: return target
+        closest = min(points, key=lambda x: abs(x - target))
+        return closest if abs(closest - target) <= threshold else target
+
     for b in macro_blocks:
         is_ad = (b["label"] == ad_cluster and ad_cluster != -1)
+        
+        start_t = b["start"]
+        end_t   = b["end"]
+        
+        if all_cuts is not None:
+            # Prevent start boundary snapping back behind 0 or exceeding original bounds improperly
+            start_t = snap(start_t, all_cuts, threshold=5.0)
+            end_t = snap(end_t, all_cuts, threshold=5.0)
+
+        # Ensure we don't snap the bounds past each other
+        if end_t <= start_t:
+            end_t = start_t + 0.1
+            
         classified.append({
-            "start_seconds":   b["start"],
-            "end_seconds":     b["end"],
-            "duration_seconds": b["duration"],
+            "start_seconds":   start_t,
+            "end_seconds":     end_t,
+            "duration_seconds": end_t - start_t,
             "is_content":      not is_ad,
             "confidence":      0.75 if is_ad else 0.85,
         })

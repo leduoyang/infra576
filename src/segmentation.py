@@ -141,7 +141,7 @@ def run_segmentation_pipeline(
     video_path: str,
     metadata: dict,
     scene_threshold: float = 15.0,
-) -> list[dict]:
+) -> tuple[list[dict], list[float]]:
     """
     ORCHESTRATOR: 5-Step K-Means Overlapping Sliding Window Pipeline.
 
@@ -237,4 +237,4 @@ def run_segmentation_pipeline(
         segments.append(scene)
 
     clip.close()
-    return segments
+    return segments, all_cuts

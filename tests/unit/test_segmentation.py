@@ -37,7 +37,7 @@ def test_run_segmentation_pipeline_sliding_window_structure(tmp_path):
          mock.patch('src.segmentation.analyze_solid_color_from_frames', return_value=False):
 
         metadata = {"audio_start_time": 0.0, "duration_seconds": 35.0}
-        segments = run_segmentation_pipeline("fake.mp4", metadata)
+        segments, all_cuts = run_segmentation_pipeline("fake.mp4", metadata)
 
         # Duration 35 / step 5 = 7 windows
         assert len(segments) == 7
