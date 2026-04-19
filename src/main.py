@@ -33,18 +33,20 @@ def run_pipeline(
         stem = Path(video_path).stem
         output_path = str(Path(video_path).parent / f"{stem}_segments.json")
 
-    # 1. INGEST (Common Infra)
+    # 1. INGEST
+    print(f"[1/4] Extracting video metadata...")
     metadata = get_video_metadata(video_path)
 
-    # 2. SEGMENTATION & FEATURE EXTRACTION (The Orchestrator)
-    # This now combines shot detection and feature mapping
-    segments, global_profile = run_segmentation_pipeline(video_path, metadata, scene_threshold)
+    # 2. SEGMENTATION & FEATURE EXTRACTION (Steps 1 & 2)
+    print(f"[2/4] Running slice-first segmentation and per-segment feature extraction...")
+    segments = run_segmentation_pipeline(video_path, metadata, scene_threshold)
 
-    # 3. CLASSIFICATION (The Decision Maker)
-    classified_segments = classify_segments(segments, metadata["duration_seconds"], global_profile)
+    # 3. CLASSIFICATION (Steps 3, 4 & 5: K-Means, duration gate, sequence validation)
+    print(f"[3/4] Running K-Means classification...")
+    classified_segments = classify_segments(segments, metadata["duration_seconds"])
 
-
-    # 4. EXPORT (Common Infra)
+    # 4. EXPORT
+    print(f"[4/4] Building and exporting results to {output_path}...")
     result = build_output(video_path, metadata, classified_segments)
 
     with open(output_path, "w", encoding="utf-8") as f:

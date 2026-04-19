@@ -1,75 +1,40 @@
-"""
-Unit tests for src/process.py
-"""
+import numpy as np
+from src.classification import classify_segments, _is_commercial_duration
 
-import os
-import sys
-import pytest
-
-# Ensure project root is in path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from src.classification import classify_segments
-
-def test_classify_segments_with_profile():
-    global_profile = {
-        "avg_centroid": 1000.0,
-        "avg_bandwidth": 1000.0,
-        "avg_motion": 5.0
-    }
-    segments = [
-        {
-            "start_seconds": 0.0, 
-            "end_seconds": 10.0, 
-            "duration_seconds": 10.0,
-            "spectral_centroid": 1050.0, # Close to avg
-            "spectral_bandwidth": 950.0,  # Close to avg
-            "motion_score": 5.5          # Close to avg
-        },
-        {
-            "start_seconds": 10.0, 
-            "end_seconds": 15.0, 
-            "duration_seconds": 5.0,     # Short + Outlier
-            "spectral_centroid": 2500.0, # Far from avg
-            "spectral_bandwidth": 2000.0, 
-            "motion_score": 20.0
-        },
-    ]
-    classified = classify_segments(segments, duration=15.0, global_profile=global_profile)
-    
-    assert len(classified) == 2
-    assert classified[0]["is_content"] is True
-    assert classified[1]["is_content"] is False
-    assert classified[1]["segment_type"] == "ad"
+def test_is_commercial_duration():
+    assert _is_commercial_duration(30.0) is True
+    assert _is_commercial_duration(15.0) is True
+    assert _is_commercial_duration(60.0) is True
+    assert _is_commercial_duration(45.0) is True
+    assert _is_commercial_duration(400.0) is False
+    assert _is_commercial_duration(150.0) is False
 
 def test_classify_segments_empty():
-    assert classify_segments([], 0.0, {}) == []
+    assert classify_segments([], 100.0) == []
 
-def test_merge_consecutive_segments():
-    # Mock segments of same type
-    segments = [
-        {"start_seconds": 0.0, "end_seconds": 2.0, "duration_seconds": 2.0, "segment_type": "video_content", "confidence": 0.9},
-        {"start_seconds": 2.0, "end_seconds": 4.0, "duration_seconds": 2.0, "segment_type": "video_content", "confidence": 0.8},
-        {"start_seconds": 4.0, "end_seconds": 6.0, "duration_seconds": 2.0, "segment_type": "ad", "confidence": 1.0},
-        {"start_seconds": 6.0, "end_seconds": 8.0, "duration_seconds": 2.0, "segment_type": "ad", "confidence": 0.5},
-        {"start_seconds": 8.0, "end_seconds": 10.0, "duration_seconds": 2.0, "segment_type": "video_content", "confidence": 1.0},
-    ]
+def test_classify_segments_merging_and_smoothing():
+    windows = []
+    
+    # 0 to 100s -> 20 windows (stride is 5)
+    for i in range(20):
+        s = i * 5.0
+        windows.append({"start_seconds": s, "end_seconds": s + 15.0, "duration_seconds": 15.0, "pacing_score": 0.0})
 
+    # Ad block: 100s to 160s. Step mapping creates exactly a 60-second block out of 12 contiguous windows
+    # i=20 (starts 100, mapped 100-105) through i=31 (starts 155, mapped 155-160)
+    for i in range(20, 32):
+        s = i * 5.0
+        windows.append({"start_seconds": s, "end_seconds": s + 15.0, "duration_seconds": 15.0, "pacing_score": 99.0})
+        
+    # Content block: 160s onwards -> 20 windows
+    for i in range(32, 52):
+        s = i * 5.0
+        windows.append({"start_seconds": s, "end_seconds": s + 15.0, "duration_seconds": 15.0, "pacing_score": 0.0})
+        
+    final = classify_segments(windows, 300.0)
     
-    from src.classification import merge_consecutive_segments
-    merged = merge_consecutive_segments(segments)
-    
-    # Expected: 3 segments (content, ad, content)
-    assert len(merged) == 3
-    assert merged[0]["duration_seconds"] == 4.0
-    assert merged[0]["segment_type"] == "video_content"
-    assert merged[0]["confidence"] == 0.8  # Min confidence
-    
-    assert merged[1]["duration_seconds"] == 4.0
-    assert merged[1]["segment_type"] == "ad"
-    assert merged[1]["confidence"] == 0.5
-    
-    assert merged[2]["duration_seconds"] == 2.0
-    assert merged[2]["segment_type"] == "video_content"
-
-
+    assert final[0]["is_content"] is True
+    assert final[1]["is_content"] is False
+    assert final[1]["duration_seconds"] == 60.0
+    assert final[1]["start_seconds"] == 105.0
+    assert final[1]["end_seconds"] == 165.0
