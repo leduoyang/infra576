@@ -25,11 +25,13 @@ def analyze_audio_features(y: np.ndarray, sr: int,
     rms       = librosa.feature.rms(y=seg)
     centroid  = librosa.feature.spectral_centroid(y=seg, sr=sr)
     bandwidth = librosa.feature.spectral_bandwidth(y=seg, sr=sr)
+    mfccs     = librosa.feature.mfcc(y=seg, sr=sr, n_mfcc=13)
 
     return {
         "audio_energy":        float(np.mean(rms)),
         "spectral_centroid":   float(np.mean(centroid)),
         "spectral_bandwidth":  float(np.mean(bandwidth)),
+        "mfcc":                mfccs.mean(axis=1).tolist()
     }
 
 
@@ -90,10 +92,12 @@ def analyze_audio_from_array(y: np.ndarray, sr: int) -> dict:
     rms       = librosa.feature.rms(y=y)
     centroid  = librosa.feature.spectral_centroid(y=y, sr=sr)
     bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)
+    mfccs     = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     return {
         "audio_energy":       float(np.mean(rms)),
         "spectral_centroid":  float(np.mean(centroid)),
         "spectral_bandwidth": float(np.mean(bandwidth)),
+        "mfcc":               mfccs.mean(axis=1).tolist()
     }
 
 

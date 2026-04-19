@@ -219,12 +219,11 @@ def _sequence_validate(segments: list[dict]) -> list[dict]:
 
 def _audio_fingerprint_override(segments: list[dict], windows: list[dict]) -> list[dict]:
     """
-    Identify the host's voice by calculating the mean Spectral Centroid and Bandwidth
-    of all Content segments. If any Ad segment matches this fingerprint with <5% variance,
-    label it as a 'sponsored_segment' and override it to be content.
+    Identify the host's voice by calculating the mean 13-Dimensional MFCC vector
+    of all Content segments. If any Ad segment matches this vector with >0.98
+    Cosine Similarity, label it as a 'sponsored_segment' and override it to be content.
     """
-    content_centroids = []
-    content_bandwidths = []
+    content_mfccs = []
     
     for seg in segments:
         if not seg.get("is_content", False):
@@ -232,45 +231,41 @@ def _audio_fingerprint_override(segments: list[dict], windows: list[dict]) -> li
         for w in windows:
             mid = w["start_seconds"] + (w["duration_seconds"] / 2.0)
             if seg["start_seconds"] <= mid <= seg["end_seconds"]:
-                sc = w.get("spectral_centroid", 0.0)
-                sb = w.get("spectral_bandwidth", 0.0)
-                if sc > 0 and sb > 0:
-                    content_centroids.append(sc)
-                    content_bandwidths.append(sb)
+                mfcc = w.get("mfcc")
+                if mfcc is not None and len(mfcc) == 13:
+                    content_mfccs.append(mfcc)
                     
-    if not content_centroids:
+    if not content_mfccs:
         return segments  # Cannot establish a baseline
         
-    master_sc = float(np.mean(content_centroids))
-    master_sb = float(np.mean(content_bandwidths))
+    master_mfcc = np.mean(content_mfccs, axis=0) # shape (13,)
+    master_norm = np.linalg.norm(master_mfcc[1:])
+    if master_norm == 0:
+        return segments
     
     for seg in segments:
         if seg.get("is_content", False):
             continue
             
-        ad_sc = []
-        ad_sb = []
+        ad_mfccs = []
         for w in windows:
             mid = w["start_seconds"] + (w["duration_seconds"] / 2.0)
             if seg["start_seconds"] <= mid <= seg["end_seconds"]:
-                sc = w.get("spectral_centroid", 0.0)
-                sb = w.get("spectral_bandwidth", 0.0)
-                if sc > 0 and sb > 0:
-                    ad_sc.append(sc)
-                    ad_sb.append(sb)
+                mfcc = w.get("mfcc")
+                if mfcc is not None and len(mfcc) == 13:
+                    ad_mfccs.append(mfcc)
                     
-        if not ad_sc:
+        if not ad_mfccs:
             continue
             
-        seg_sc = float(np.mean(ad_sc))
-        seg_sb = float(np.mean(ad_sb))
+        seg_mfcc = np.mean(ad_mfccs, axis=0)
+        seg_norm = np.linalg.norm(seg_mfcc[1:])
         
-        var_sc = abs(seg_sc - master_sc) / (master_sc + 1e-9)
-        var_sb = abs(seg_sb - master_sb) / (master_sb + 1e-9)
-        
-        if var_sc <= 0.05 and var_sb <= 0.05:
-            seg["is_content"] = True
-            seg["segment_type"] = "sponsored_segment"
+        if seg_norm > 0:
+            cos_sim = np.dot(master_mfcc[1:], seg_mfcc[1:]) / (master_norm * seg_norm)
+            if cos_sim >= 0.98:
+                seg["is_content"] = True
+                seg["segment_type"] = "sponsored_segment"
             
     return segments
 
