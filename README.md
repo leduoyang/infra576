@@ -51,6 +51,35 @@ Update `src/classification.py` to use the features (motion, audio energy, etc.) 
 
 ---
 
+## Algorithm Explanation: The Multimodal Engine
+
+We use a deterministic pipeline that relies on classical machine learning and broadcast standard constraints to isolate ads without expensive AI inference.
+
+### 1. Delta Features (The K-Means Inputs)
+To prevent the algorithm from confusing "loud/fast movie scenes" with "loud/fast commercials", we evaluate relative feature spikes instead of raw absolute values.
+
+We calculate a **5-Minute Rolling Median** across the video timeline. The K-Means engine is then fed the **Deltas** (Difference from the Median). The 6-feature matrix includes:
+1. **Delta Audio Energy**: Loudness spike relative to the surrounding 5 minutes.
+2. **ZCR (Zero-Crossing Rate)**: High in commercials due to excited speech and compressed pop music.
+3. **Delta Motion Energy Variance**: How frenetic/fast-cutting the visual scene is relative to the baseline.
+4. **Spatial Edge Density**: Captures on-screen text, graphics, and hard logos common in ads.
+5. **Pacing Score**: Shot boundary frequency (cuts per minute).
+6. **Delta RMS Variance**: Compressed audio dynamic range.
+
+### 2. K-Means Clustering (K=10)
+We pass the delta features into a pure numpy **K-Means clustering algorithm configured with K=10**. 
+This slices the video into 10 highly distinct behavioral states (e.g., quiet dialogue, fast action, silent black frames, loud commercial graphics).
+
+### 3. The Two-Tier Modulo-15 Engine (Decision Maker)
+Once the 10 clusters are generated, we must identify which ones represent Advertisements.
+Because broadcast television strictly enforces commercial runtimes (15s, 30s, 45s, 60s), we evaluate the **Hit Rate** of each cluster—how often sequences inside the cluster perfectly match a broadcast runtime.
+
+We evaluate all 10 clusters against a Two-Tier ruleset in `_label_clusters`:
+- **Rule A (Strong Match)**: If a cluster's blocks match Modulo-15 lengths `≥ 40%` of the time, the entire cluster is flagged as an Ad.
+- **Rule B (Moderate Match + High Contrast)**: If a cluster's blocks match Modulo-15 lengths `≥ 25%` of the time, AND the cluster's centroid exhibits a huge Feature Contrast Score (massive spike in motion/audio/edges), it is flagged as an Ad.
+
+---
+
 ## How to Run Tests
 
 This project uses `pytest`. Ensure you have dependencies installed.

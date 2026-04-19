@@ -62,7 +62,7 @@ def _normalise(X: np.ndarray) -> np.ndarray:
     return (X - mu) / std
 
 
-def _kmeans(X: np.ndarray, k: int = 6, max_iter: int = 100, n_init: int = 10,
+def _kmeans(X: np.ndarray, k: int = 10, max_iter: int = 100, n_init: int = 10,
             seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     """
     Lloyd's K-Means with multiple random restarts.
@@ -197,8 +197,8 @@ def classify_segments(windows: list[dict], duration: float,
     X_raw = _build_feature_matrix(windows)
     X     = _normalise(X_raw)
 
-    # ---- 2. K-Means (K=6) on individual windows -----------------------
-    K_CLUSTERS = 6
+    # ---- 2. K-Means (K=10) on individual windows -----------------------
+    K_CLUSTERS = 10
     raw_labels, centroids = _kmeans(X, k=K_CLUSTERS)
 
     # ---- 3. Label Smoothing (Median Filter) ----------------------------
