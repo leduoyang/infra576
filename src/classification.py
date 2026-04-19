@@ -135,6 +135,10 @@ _COMMERCIAL_LENGTHS = [15.0, 30.0, 45.0, 60.0]  # standard broadcast ad duration
 _DURATION_TOLERANCE = 2.0                  # ±2s for frame-rate rounding
 _MAX_COMMERCIAL_DURATION = 120.0           # no single ad block > 2 min
 
+_HIT_RATE_STRONG   = 0.40   # Strong broadcast structure (Rule A)
+_HIT_RATE_MODERATE = 0.25   # Moderate structural match
+_CONTRAST_MODERATE = 1.50   # High contrast shift needed for Rule B
+
 def _is_commercial_duration(dur: float) -> bool:
     """Returns True if `dur` is within tolerance of a standard ad length.
     Segments longer than MAX_COMMERCIAL_DURATION are never commercials."""
@@ -233,21 +237,28 @@ def classify_segments(windows: list[dict], duration: float,
     macro_blocks.append(current_block)
 
     # ---- 5. Duration Gate: identify Ad cluster from Macro Blocks -------
-    ad_cluster = -1
-    scores = []
+    ad_clusters = set()
     
     for j in range(K_CLUSTERS):
         blocks_j = [b for b in macro_blocks if b["label"] == j]
         if not blocks_j:
-            scores.append(0.0)
             continue
         hits = sum(_is_commercial_duration(b["duration"]) for b in blocks_j)
-        scores.append(hits / len(blocks_j))
+        hit_rate = hits / len(blocks_j)
 
-    if scores:
-        best = int(np.argmax(scores))
-        if scores[best] >= 0.30:  # Modulo-15 base gate
-            ad_cluster = best
+        contrast = 0.0
+        if j < len(centroids):
+            contrast = _cluster_contrast_score(centroids[j])
+
+        # Rule A: Strong structural match
+        is_ad = hit_rate >= _HIT_RATE_STRONG
+        
+        # Rule B: Moderate structure + Strong Feature Contrast
+        if not is_ad:
+            is_ad = (hit_rate >= _HIT_RATE_MODERATE and contrast > _CONTRAST_MODERATE)
+
+        if is_ad:
+            ad_clusters.add(j)
 
     # ---- 6. Assemble output -------
     classified = []
@@ -258,7 +269,7 @@ def classify_segments(windows: list[dict], duration: float,
         return closest if abs(closest - target) <= threshold else target
 
     for b in macro_blocks:
-        is_ad = (b["label"] == ad_cluster and ad_cluster != -1)
+        is_ad = (b["label"] in ad_clusters)
         
         start_t = b["start"]
         end_t   = b["end"]
