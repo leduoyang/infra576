@@ -242,16 +242,19 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
                 if start <= intro_cutoff or end >= outro_cutoff:
                     i = j + 1
                     continue
-                # Reject pure-silence runs (content transitions/interludes):
-                # real ads have mixed speech, not 100% ns=1.0, wr=0.
+                # Reject pure-silence runs that are ALSO quiet (content transitions):
+                # loud silent runs may be jingle/music ads, keep those.
                 run_shots = raw_segments[i : j + 1]
                 pure = sum(
                     1
                     for s in run_shots
-                    if float(s.get("no_speech_prob", 0.0)) >= 0.95
-                    and float(s.get("word_rate", 0.0)) < 0.1
+                    if float(s.get("no_speech_prob", 0.0)) >= 0.75
+                    and float(s.get("word_rate", 0.0)) < 2.0
                 )
-                if pure / max(1, len(run_shots)) > 0.85:
+                run_rms = np.mean([float(s.get("audio_energy", 0.0)) for s in run_shots])
+                video_rms_med = float(np.median([float(s.get("audio_energy", 0.0)) for s in raw_segments])) + 1e-6
+                is_quiet = run_rms < 1.5 * video_rms_med
+                if pure / max(1, len(run_shots)) > 0.85 and is_quiet:
                     i = j + 1
                     continue
                 runs.append((start, end))
@@ -327,6 +330,53 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
             else:
                 i += 1
 
+    # Loud-narration rescue: broadcast ads are mixed louder and have voiceover.
+    # Shot with RMS ≥ 1.8× video-median + speech (ns≤0.1, wr≥0.2) + motion ≥ 20
+    # = ad candidate. Targets motion-rich narration ads missed by main classifier.
+    loud_runs = []
+    rms_all = np.asarray([float(s.get("audio_energy", 0.0)) for s in raw_segments])
+    if len(rms_all) >= 5:
+        med_rms = float(np.median(rms_all))
+        if med_rms > 1e-5:
+            lflags = [
+                (
+                    float(s.get("audio_energy", 0.0)) >= 1.8 * med_rms
+                    and float(s.get("no_speech_prob", 1.0)) <= 0.1
+                    and float(s.get("word_rate", 0.0)) >= 0.2
+                    and float(s.get("motion_score", 0.0)) >= 20.0
+                )
+                for s in raw_segments
+            ]
+            LMAX_GAP = 1
+            i = 0
+            while i < len(lflags):
+                if lflags[i]:
+                    j = i
+                    gap = 0
+                    k = i
+                    while k + 1 < len(lflags):
+                        if lflags[k + 1]:
+                            j = k + 1
+                            gap = 0
+                            k += 1
+                        elif gap + 1 <= LMAX_GAP:
+                            gap += 1
+                            k += 1
+                        else:
+                            break
+                    start = raw_segments[i]["start_seconds"]
+                    end = raw_segments[j]["end_seconds"]
+                    if end - start >= 20.0:
+                        if not (start <= intro_cutoff or end >= outro_cutoff):
+                            loud_runs.append((start, end))
+                    i = j + 1
+                else:
+                    i += 1
+            runs.extend(loud_runs)
+
+    # When loud-narration rescue fires next to an existing silent-dominated ad,
+    # flip that silent region back to content. The rescue provides the real ad
+    # boundary; the adjacent silent block is boundary drift from main classifier.
     if not runs:
         return classified
 
