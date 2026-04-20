@@ -18,3 +18,6 @@ ENV/
 *_segments.json
 tests/e2e_videos/
 tmp/
+tmp_audio.wav
+features_cache/
+.claude/
