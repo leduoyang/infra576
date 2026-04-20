@@ -214,15 +214,28 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
         ns = float(s.get("no_speech_prob", 0.0))
         wr = float(s.get("word_rate", 0.0))
         lp = float(s.get("avg_logprob", 0.0))
-        flags.append(ns >= 0.35 and wr <= 1.5 and lp <= -0.8)
+        flags.append(ns >= 0.35 and wr <= 2.0 and lp <= -0.8)
 
+    # Allow up to MAX_GAP consecutive non-flag shots inside a run (intermittent
+    # music/talk in fragmented ad blocks).
+    MAX_GAP = 2
     runs = []
     i = 0
     while i < len(flags):
         if flags[i]:
             j = i
-            while j + 1 < len(flags) and flags[j + 1]:
-                j += 1
+            gap = 0
+            k = i
+            while k + 1 < len(flags):
+                if flags[k + 1]:
+                    j = k + 1
+                    gap = 0
+                    k = k + 1
+                elif gap + 1 <= MAX_GAP:
+                    gap += 1
+                    k = k + 1
+                else:
+                    break
             start = raw_segments[i]["start_seconds"]
             end = raw_segments[j]["end_seconds"]
             if end - start >= 30.0:
