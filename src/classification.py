@@ -122,9 +122,13 @@ def classify_segments(segments: list[dict], duration: float, global_profile: dic
     classified = _drop_short_ads(classified, MIN_AD_DURATION)
     classified = _drop_boundary_ads(classified, duration, BOUNDARY_MARGIN)
     classified = _merge_consecutive(classified)
+    classified = _drop_content_like_ads(classified, segments)
 
     # Speech-based rescue: find sustained low-speech / high no-speech runs missed above
     classified = _speech_rescue(segments, classified, duration)
+    classified = _merge_consecutive(classified)
+    classified = _drop_content_like_ads(classified, segments)
+    classified = _trim_dialogue_boundaries(classified, segments)
     classified = _merge_consecutive(classified)
 
     # Audio onset boundary refinement: snap ad start/end to strongest onset (±window)
@@ -453,6 +457,155 @@ def _bridge_ad_fragments(segments: list[dict], gap_seconds: float) -> list[dict]
         else:
             out.append(cur.copy())
             i += 1
+    return out
+
+
+def _drop_content_like_ads(classified: list[dict], raw_segments: list[dict]) -> list[dict]:
+    """Reject ad segments that look like content (static cutaways, quiet silence).
+
+    Two patterns:
+    (a) Single long static shot: 1 shot covers the whole ad, duration > 35s,
+        motion < 10, mean RMS < 0.5× video median. Real ads cut every 5-15s.
+    (b) Short pure-silent quiet region: ≥90% shots pure-silent (ns≥0.95, wr<0.1),
+        duration < 40s, mean RMS < 2.5× video median. Loud silent jingles kept.
+    """
+    if not raw_segments:
+        return classified
+    rms_all = np.asarray([float(s.get("audio_energy", 0.0)) for s in raw_segments])
+    med_rms = float(np.median(rms_all)) + 1e-6
+    out = []
+    for seg in classified:
+        if seg.get("segment_type") != "ad":
+            out.append(seg.copy())
+            continue
+        s0, s1 = seg["start_seconds"], seg["end_seconds"]
+        shots_in = [r for r in raw_segments if r["end_seconds"] > s0 and r["start_seconds"] < s1]
+        if not shots_in:
+            out.append(seg.copy())
+            continue
+        dur = s1 - s0
+        mean_rms = float(np.mean([float(r.get("audio_energy", 0.0)) for r in shots_in]))
+        rms_ratio = mean_rms / med_rms
+        # (a) single long static shot
+        if len(shots_in) == 1 and dur > 35.0:
+            sh = shots_in[0]
+            if float(sh.get("motion_score", 0.0)) < 10.0 and rms_ratio < 0.5:
+                flipped = seg.copy()
+                flipped["segment_type"] = "video_content"
+                flipped["is_content"] = True
+                out.append(flipped)
+                continue
+        # (b) short pure-silent quiet region
+        pure = sum(
+            1 for r in shots_in
+            if float(r.get("no_speech_prob", 0.0)) >= 0.95
+            and float(r.get("word_rate", 1.0)) < 0.1
+        )
+        pure_ratio = pure / len(shots_in)
+        if pure_ratio >= 0.90 and dur < 40.0 and rms_ratio < 2.5:
+            flipped = seg.copy()
+            flipped["segment_type"] = "video_content"
+            flipped["is_content"] = True
+            out.append(flipped)
+            continue
+        # (c) Narration-absent low-motion region: zero narration shots (wr≥1.0),
+        # zero high-motion shots (≥ 2.5× video median), short, quiet.
+        # Silent high-motion ads survive via motion check; silent-loud jingles
+        # via RMS; long silent commercials (test_001 ad1) via duration.
+        mot_med = float(np.median([float(r.get("motion_score", 0.0)) for r in raw_segments])) + 1e-6
+        n_narration = sum(1 for r in shots_in if float(r.get("word_rate", 0.0)) >= 1.0)
+        n_highmot = sum(1 for r in shots_in if float(r.get("motion_score", 0.0)) / mot_med >= 2.5)
+        if n_narration == 0 and n_highmot == 0 and dur < 45.0 and rms_ratio < 2.5:
+            flipped = seg.copy()
+            flipped["segment_type"] = "video_content"
+            flipped["is_content"] = True
+            out.append(flipped)
+            continue
+        out.append(seg.copy())
+    return out
+
+
+def _trim_dialogue_boundaries(classified: list[dict], raw_segments: list[dict]) -> list[dict]:
+    """Trim leading/trailing dialogue-content shots from ad segments.
+
+    Pattern: ad classifier bleeds into adjacent content dialogue. Trailing shots
+    with strong speech (ns<=0.15), high word rate (wr>=2.5), and low motion
+    (<15) are content dialogue, not ad.
+    """
+    if not raw_segments:
+        return classified
+
+    def is_dialogue(sh: dict) -> bool:
+        return (
+            float(sh.get("no_speech_prob", 0.0)) <= 0.15
+            and float(sh.get("word_rate", 0.0)) >= 2.5
+            and float(sh.get("motion_score", 0.0)) < 15.0
+        )
+
+    out = []
+    for seg in classified:
+        if seg.get("segment_type") != "ad":
+            out.append(seg.copy())
+            continue
+        s0, s1 = seg["start_seconds"], seg["end_seconds"]
+        shots_in = [
+            r for r in raw_segments
+            if r["end_seconds"] > s0 + 0.01 and r["start_seconds"] < s1 - 0.01
+        ]
+        if len(shots_in) < 2:
+            out.append(seg.copy())
+            continue
+
+        new_end = s1
+        for sh in reversed(shots_in):
+            if is_dialogue(sh):
+                new_end = sh["start_seconds"]
+            else:
+                break
+        new_start = s0
+        for sh in shots_in:
+            if sh["end_seconds"] >= new_end:
+                break
+            if is_dialogue(sh):
+                new_start = sh["end_seconds"]
+            else:
+                break
+
+        new_start = max(s0, new_start)
+        new_end = min(s1, new_end)
+        # Require trimmed span ≥ 10s to avoid chopping single speech-bursts
+        # that are part of the ad (narrator tag lines, product callouts).
+        tail_trim = s1 - new_end
+        head_trim = new_start - s0
+        if tail_trim > 0 and tail_trim < 10.0:
+            new_end = s1
+        if head_trim > 0 and head_trim < 10.0:
+            new_start = s0
+        if new_end - new_start < MIN_AD_DURATION or (new_start == s0 and new_end == s1):
+            out.append(seg.copy())
+            continue
+
+        if new_start > s0:
+            c = seg.copy()
+            c["start_seconds"] = s0
+            c["end_seconds"] = new_start
+            c["duration_seconds"] = new_start - s0
+            c["segment_type"] = "video_content"
+            c["is_content"] = True
+            out.append(c)
+        a = seg.copy()
+        a["start_seconds"] = new_start
+        a["end_seconds"] = new_end
+        a["duration_seconds"] = new_end - new_start
+        out.append(a)
+        if new_end < s1:
+            c = seg.copy()
+            c["start_seconds"] = new_end
+            c["end_seconds"] = s1
+            c["duration_seconds"] = s1 - new_end
+            c["segment_type"] = "video_content"
+            c["is_content"] = True
+            out.append(c)
     return out
 
 
