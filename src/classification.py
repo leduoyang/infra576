@@ -242,6 +242,18 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
                 if start <= intro_cutoff or end >= outro_cutoff:
                     i = j + 1
                     continue
+                # Reject pure-silence runs (content transitions/interludes):
+                # real ads have mixed speech, not 100% ns=1.0, wr=0.
+                run_shots = raw_segments[i : j + 1]
+                pure = sum(
+                    1
+                    for s in run_shots
+                    if float(s.get("no_speech_prob", 0.0)) >= 0.95
+                    and float(s.get("word_rate", 0.0)) < 0.1
+                )
+                if pure / max(1, len(run_shots)) > 0.85:
+                    i = j + 1
+                    continue
                 runs.append((start, end))
             i = j + 1
         else:
