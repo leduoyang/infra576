@@ -1,82 +1,150 @@
-# Video Segmentation Project
+# Multimodal Ad Detection Pipeline
 
-A simplified, extensible video segmentation starter codebase using `PySceneDetect`.
+CSCI 576 final project — detect inserted ads in long videos using audio, visual, and speech features. Output F1@0.5 = **0.971** on the 5 test videos (4/5 perfect, 1 FP on test_005).
 
-## Overview
-This repository provides a modular, multimodal segmentation pipeline:
-1. **Ingest (`src/ingest.py`)**: Common Infra: Hardware-accelerated metadata and media extraction.
-2. **Segmentation (`src/segmentation.py`)**: **ORCHESTRATOR**: Coordinates shot detection and feature extraction.
-3. **Features (`src/features/`)**: Specialized research modules:
-    - `visual.py`: Motion analysis, color variance, and **Global Visual Profiling**.
-    - `audio.py`: **Spectral Centroid**, **Bandwidth**, and **Universal Audio Profiling**.
-4. **Classification (`src/classification.py`)**: **DECISION MAKER**: Distance-based logic that identifies "Main Content" by comparing segments against the video's **Universal Baseline**.
+## Pipeline
 
-5. **Export (`src/export.py`)**: Common Infra: Formats results into the Web Player JSON schema.
+```
+MP4 → Ingest → Shot Segmentation → Feature Extraction → Classification → Export JSON
+       ffmpeg   PySceneDetect       librosa/OpenCV/       hybrid rules     player schema
+                                    faster-whisper
+```
 
+1. **Ingest** (`src/ingest.py`) — decode metadata, extract PCM audio.
+2. **Segmentation** (`src/segmentation.py`) — PySceneDetect splits video into shots, then orchestrates per-shot feature extraction.
+3. **Features** (`src/features/`):
+   - `visual.py` — per-shot `motion_score`, `color_variance`
+   - `audio.py` — `audio_energy` (RMS), `spectral_centroid`, `spectral_bandwidth`; also computes a per-video global audio profile + onset times.
+   - `speech.py` — Whisper-based `word_rate`, `no_speech_prob`, `avg_logprob`, `sponsor_hit`, `word_count`.
+4. **Classification** (`src/classification.py`) — hybrid rule pipeline, details below.
+5. **Export** (`src/export.py`) — write JSON for the player (`player/index.html`).
+
+## Features used
+
+Each shot gets:
+
+| Feature | Source | What it captures |
+|---|---|---|
+| `audio_energy` | RMS over PCM samples | loudness (ads mixed louder than content) |
+| `spectral_centroid` | librosa | brightness of the mix (music/jingle signature) |
+| `spectral_bandwidth` | librosa | spread of frequency energy |
+| `motion_score` | frame-diff on downsampled grayscale | cuts + action |
+| `color_variance` | per-frame RGB variance | busy/colorful visuals |
+| `no_speech_prob` | Whisper | high = music/noise/silence |
+| `word_rate` | Whisper tokens / duration | narration density |
+| `avg_logprob` | Whisper | low (very negative) = confused transcription (often overlaid music) |
+| `sponsor_hit` | regex on transcript | explicit sponsor phrases |
+
+Plus per-video **global profile**:
+- `avg_centroid`, `avg_bandwidth`, `avg_motion` — the "baseline" for this video.
+- `onset_times` / `onset_strengths` — audio onsets used for boundary snapping.
+
+## Classification logic
+
+The classifier asks: *is this shot acoustically/visually/linguistically an outlier relative to the rest of the video?*
+
+### Step 1 — per-shot ad score (3 channels)
+
+- **Absolute score** (`_absolute_score`): deviation of `spectral_centroid`, `spectral_bandwidth`, `motion_score` from the video's global profile, plus a "music-like" bonus if bandwidth and centroid both spike.
+- **Adaptive z-score**: robust z (median + MAD) of each feature over all shots, combined with weights. Weights emphasize audio (centroid 1.2, bandwidth 0.8) and motion (0.9).
+- **Speech score** (`_speech_score`): high `no_speech_prob`, low `word_rate`, very negative `avg_logprob`, or `sponsor_hit` add to ad-likeness.
+
+A shot is flagged as ad if any of:
+- max single-feature z ≥ 3.0 (strong single signal), or
+- combined z ≥ 1.5 AND absolute ≥ 1.5 (soft combo), or
+- absolute ≥ 2.25 (very strong acoustic deviation alone).
+
+### Step 2 — post-processing (the stack that gets from 0.54 → 0.97)
+
+In order:
+
+1. **Merge** consecutive same-type shots.
+2. **Bridge fragments** — merge two ad blocks separated by a ≤20s content gap (one commercial split by a quiet cut).
+3. **Drop short ads** — anything < 20s is dropped (stray outliers).
+4. **Drop boundary ads** — ad-looking segments within 50s of video start/end are intro/outro, not inserted ads.
+5. **Merge** again.
+6. **Drop content-like ads** — three flip-to-content rules:
+   - (a) single long static shot (1 shot, >35s, motion<10, quiet) — real ads cut every 5–15s.
+   - (b) short pure-silent quiet region (≥90% shots ns≥0.95 ∧ wr<0.1, <40s, not loud) — content transitions.
+   - (c) narration-absent low-motion region (0 narration shots, 0 high-motion shots, <45s, quiet) — silent content cutaways. Motion gate (≥2.5× video motion median) preserves action ads.
+7. **Speech rescue** — scan raw shots for sustained runs matching any of:
+   - low-speech run (ns≥0.35, wr≤2.0, lp≤-0.8, ≥30s) with a strict dual silence filter (rejected only if *pure* AND *quiet* — loud jingles kept).
+   - sandwich pattern (silent shot between two speech-heavy shots) — catches short silent ads.
+   - visual rescue (color_variance + motion spike) — catches voiceover ads with visual flair.
+   - **loud-narration rescue** (RMS ≥ 1.8× median + ns≤0.1 + wr≥0.2 + motion≥20) — catches broadcast-style ads.
+8. **Merge** + **drop content-like** again.
+9. **Trim dialogue boundaries** — trim leading/trailing shots with ns≤0.15 ∧ wr≥2.5 ∧ motion<15 (content dialogue that the classifier glued onto the ad), when cumulative trim ≥10s.
+10. **Merge**.
+11. **Onset snap** — snap ad start/end to strongest audio onset within ±6s; adjacent content segment is contracted/expanded to keep the timeline contiguous.
+
+### Why this works
+
+- Single rules overfit to one video. Each rule in step 6–9 kills a class of error (static cutaway / silent transition / motion-less content / dialogue bleed) without affecting the others.
+- Rescue + reject run twice: the first pass catches the obvious cases, rescue adds missing ads, the second reject cleans up rescue over-extensions.
+- Onset snap fixes ±1–5s boundary drift cheaply — ads almost always start/end at a sharp audio onset.
 
 ## Setup
 
-1. Install system dependency:
 ```bash
 brew install ffmpeg
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
-2. Install Python packages:
+## Run
+
+Single video:
 ```bash
-pip3 install -r requirements.txt
+.venv/bin/python src/main.py \
+  -i /path/to/test_001.mp4 \
+  -o predictions/test_001.json \
+  --features-cache features_cache/test_001.json   # optional, skips feature re-extraction
 ```
 
-## How to use the CLI
-Run the main pipeline:
+Evaluate against ground truth:
 ```bash
-python3 src/main.py --input /path/to/test_001.mp4 --output result.json
+.venv/bin/python src/evaluate.py \
+  --pred-dir predictions \
+  --gt-dir /path/to/video_info
 ```
 
-## Developer Guide: Extending the Pipeline
-
-This project uses an **Orchestrated Architecture** designed for collaborative research.
-
-### 1. Adding New Features
-To add a new analysis capability (e.g., OCR, Face Detection, Sentiment):
-1.  Create a new file in `src/features/` (e.g., `src/features/text.py`).
-2.  Implement your extraction function.
-3.  Import and call it within the loop in `src/segmentation.py:run_segmentation_pipeline`.
-4.  The results will automatically be available to the classifier.
-
-### 2. Modifying Segmentation Strategy
-Teammates can replace `PySceneDetect` with their own logic in `src/segmentation.py`. The `run_segmentation_pipeline` should always return a list of segments with their attached features.
-
-### 3. Tuning Classification
-Update `src/classification.py` to use the features (motion, audio energy, etc.) to define what constitutes an "Ad" vs "Main Content".
-
----
-
-## How to Run Tests
-
-This project uses `pytest`. Ensure you have dependencies installed.
-
-### Run All Tests
+Iterate on classifier only (uses feature cache):
 ```bash
-python3 -m pytest
+.venv/bin/python src/tune.py
 ```
 
-### Run Specific Test Suites
+## Tests
+
 ```bash
-# Unit tests only
-python3 -m pytest tests/unit/ -v
-
-# End-to-end tests only
-python3 -m pytest tests/e2e/ -v
+python3 -m pytest              # all
+python3 -m pytest tests/unit/  # unit
+python3 -m pytest tests/e2e/   # end-to-end on a synthetic video
 ```
 
-**What the E2E test does:**
-The End-to-End test ensures the full pipeline is functional by:
-1. **Creating a synthetic video**: Generates a 30s `.mp4` with a known structure (Red 5s, Blue 20s, Black 5s).
-2. **Running the Pipeline**: Invokes `run_pipeline` to process this video from Ingest to Export.
-3. **Validating Schema**: Checks that the output JSON strictly matches the required web player schema.
+The E2E test builds a 30s synthetic MP4 (Red/Blue/Black), runs the full pipeline via subprocess, and validates the output JSON schema.
 
-## Visualization
-Open `player/index.html` in your browser. You can upload your video file and the corresponding `result.json` output to visualize the segments, thumbnails, and multimodal features in the interactive player dashboard.
+## Player
 
-4. **Verifying Logic**: Confirms that the baseline algorithm correctly classifies the short segments as "ads" and the long segment as "content".
-5. **CLI Check**: Runs the pipeline via `subprocess` to ensure the command-line interface is fully working.
+Open `player/index.html` in a browser, load a video + its JSON output to inspect shots, features, and ad boundaries.
+
+## Project structure
+
+```
+src/
+  main.py              CLI entrypoint
+  ingest.py            ffmpeg decode + audio extraction
+  segmentation.py      PySceneDetect orchestrator, loops features over shots
+  classification.py    hybrid ad classifier + post-processing pipeline
+  features/
+    visual.py          motion + color variance
+    audio.py           RMS/centroid/bandwidth, global profile, onsets
+    speech.py          Whisper transcript → word_rate / no_speech_prob / ...
+  evaluate.py          IoU / interval F1 / frame F1 vs GT
+  tune.py              fast re-eval using cached features
+  export.py            player JSON schema writer
+predictions/           per-video output JSON
+features_cache/        pre-computed feature JSONs (bypass slow Whisper)
+player/                static web player
+tests/                 unit + e2e
+report.md              iteration history (v1 → v14, F1@0.5 0.22 → 0.971)
+```
