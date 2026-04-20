@@ -259,6 +259,74 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
         else:
             i += 1
 
+    # Sandwich rescue: short silent shot (8-20s) between speech-heavy neighbors.
+    # Pattern: content → silent ad snippet → content. Extend ±10s.
+    for idx, s in enumerate(raw_segments):
+        ns = float(s.get("no_speech_prob", 0.0))
+        wr = float(s.get("word_rate", 0.0))
+        lp = float(s.get("avg_logprob", 0.0))
+        d = float(s.get("duration_seconds", 0.0))
+        if not (ns >= 0.95 and wr < 0.1 and lp <= -1.5 and 5.0 <= d < 20.0):
+            continue
+        if idx == 0 or idx + 1 >= len(raw_segments):
+            continue
+        prev_wr = float(raw_segments[idx - 1].get("word_rate", 0.0))
+        next_wr = float(raw_segments[idx + 1].get("word_rate", 0.0))
+        prev_ns = float(raw_segments[idx - 1].get("no_speech_prob", 1.0))
+        next_ns = float(raw_segments[idx + 1].get("no_speech_prob", 1.0))
+        if prev_wr >= 1.5 and next_wr >= 1.5 and prev_ns < 0.5 and next_ns < 0.5:
+            start = max(0.0, s["start_seconds"] - 10.0)
+            end = min(duration, s["end_seconds"] + 10.0)
+            if not (start <= intro_cutoff or end >= outro_cutoff):
+                runs.append((start, end))
+
+    # Visual rescue: sustained color_variance spike (p75 threshold).
+    # Targets ads with voiceover narration that speech_rescue misses but
+    # visual features clearly mark as non-content.
+    cvs = np.asarray([float(s.get("color_variance", 0.0)) for s in raw_segments])
+    mots = np.asarray([float(s.get("motion_score", 0.0)) for s in raw_segments])
+    if len(cvs) >= 5:
+        cv_hi = float(np.percentile(cvs, 85))
+        mot_hi = float(np.percentile(mots, 65))
+        vflags = [
+            (cvs[i] > cv_hi and mots[i] > mot_hi)
+            for i in range(len(raw_segments))
+        ]
+        VMAX_GAP = 1
+        i = 0
+        while i < len(vflags):
+            if vflags[i]:
+                j = i
+                gap = 0
+                k = i
+                while k + 1 < len(vflags):
+                    if vflags[k + 1]:
+                        j = k + 1
+                        gap = 0
+                        k += 1
+                    elif gap + 1 <= VMAX_GAP:
+                        gap += 1
+                        k += 1
+                    else:
+                        break
+                start = raw_segments[i]["start_seconds"]
+                end = raw_segments[j]["end_seconds"]
+                if end - start >= 30.0:
+                    if not (start <= intro_cutoff or end >= outro_cutoff):
+                        # Anti-FP: ≥30% of shots must have speech drop signal
+                        run_shots = raw_segments[i : j + 1]
+                        drop_cnt = sum(
+                            1
+                            for sh in run_shots
+                            if float(sh.get("no_speech_prob", 0.0)) >= 0.35
+                            or float(sh.get("word_rate", 10.0)) < 1.0
+                        )
+                        if drop_cnt / max(1, len(run_shots)) >= 0.30:
+                            runs.append((start, end))
+                i = j + 1
+            else:
+                i += 1
+
     if not runs:
         return classified
 
