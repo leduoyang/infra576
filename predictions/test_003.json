@@ -1,68 +1,68 @@
 {
   "video_filename": "test_003.mp4",
-  "original_video_duration_seconds": 1609.616,
-  "original_video_duration_formatted": "00:26:49.616",
+  "original_video_duration_seconds": 1613.301,
+  "original_video_duration_formatted": "00:26:53.301",
   "original_video_resolution": "640x360",
   "output_filename": "test_003.mp4",
   "output_duration_seconds": 1826.657,
   "output_duration_formatted": "00:30:26.657",
-  "total_ads_duration_seconds": 217.041,
+  "total_ads_duration_seconds": 213.356,
   "num_ads_inserted": 5,
   "inserted_ads": [
     {
       "ad_index": 1,
       "ad_filename": "detected_ad_001.mp4",
-      "ad_duration_seconds": 42.576,
-      "original_video_insert_at_seconds": 422.635,
-      "original_video_insert_at_formatted": "00:07:02.635",
-      "final_video_ad_start_seconds": 422.635,
-      "final_video_ad_start_formatted": "00:07:02.635",
-      "final_video_ad_end_seconds": 465.21,
-      "final_video_ad_end_formatted": "00:07:45.210"
+      "ad_duration_seconds": 48.32,
+      "original_video_insert_at_seconds": 422.592,
+      "original_video_insert_at_formatted": "00:07:02.592",
+      "final_video_ad_start_seconds": 422.592,
+      "final_video_ad_start_formatted": "00:07:02.592",
+      "final_video_ad_end_seconds": 470.912,
+      "final_video_ad_end_formatted": "00:07:50.912"
     },
     {
       "ad_index": 2,
       "ad_filename": "detected_ad_002.mp4",
-      "ad_duration_seconds": 56.518,
-      "original_video_insert_at_seconds": 436.535,
-      "original_video_insert_at_formatted": "00:07:16.535",
-      "final_video_ad_start_seconds": 479.111,
-      "final_video_ad_start_formatted": "00:07:59.111",
+      "ad_duration_seconds": 51.917,
+      "original_video_insert_at_seconds": 435.392,
+      "original_video_insert_at_formatted": "00:07:15.392",
+      "final_video_ad_start_seconds": 483.712,
+      "final_video_ad_start_formatted": "00:08:03.712",
       "final_video_ad_end_seconds": 535.629,
       "final_video_ad_end_formatted": "00:08:55.629"
     },
     {
       "ad_index": 3,
       "ad_filename": "detected_ad_003.mp4",
-      "ad_duration_seconds": 56.268,
-      "original_video_insert_at_seconds": 802.86,
-      "original_video_insert_at_formatted": "00:13:22.860",
+      "ad_duration_seconds": 55.135,
+      "original_video_insert_at_seconds": 801.717,
+      "original_video_insert_at_formatted": "00:13:21.717",
       "final_video_ad_start_seconds": 901.953,
       "final_video_ad_start_formatted": "00:15:01.953",
-      "final_video_ad_end_seconds": 958.222,
-      "final_video_ad_end_formatted": "00:15:58.222"
+      "final_video_ad_end_seconds": 957.088,
+      "final_video_ad_end_formatted": "00:15:57.088"
     },
     {
       "ad_index": 4,
       "ad_filename": "detected_ad_004.mp4",
-      "ad_duration_seconds": 29.133,
-      "original_video_insert_at_seconds": 873.695,
-      "original_video_insert_at_formatted": "00:14:33.695",
-      "final_video_ad_start_seconds": 1029.056,
-      "final_video_ad_start_formatted": "00:17:09.056",
-      "final_video_ad_end_seconds": 1058.189,
-      "final_video_ad_end_formatted": "00:17:38.189"
+      "ad_duration_seconds": 29.024,
+      "original_video_insert_at_seconds": 874.357,
+      "original_video_insert_at_formatted": "00:14:34.357",
+      "final_video_ad_start_seconds": 1029.728,
+      "final_video_ad_start_formatted": "00:17:09.728",
+      "final_video_ad_end_seconds": 1058.752,
+      "final_video_ad_end_formatted": "00:17:38.752"
     },
     {
       "ad_index": 5,
       "ad_filename": "detected_ad_005.mp4",
-      "ad_duration_seconds": 32.546,
-      "original_video_insert_at_seconds": 1294.04,
-      "original_video_insert_at_formatted": "00:21:34.040",
-      "final_video_ad_start_seconds": 1478.534,
-      "final_video_ad_start_formatted": "00:24:38.534",
-      "final_video_ad_end_seconds": 1511.08,
-      "final_video_ad_end_formatted": "00:25:11.080"
+      "ad_duration_seconds": 28.96,
+      "original_video_insert_at_seconds": 1293.365,
+      "original_video_insert_at_formatted": "00:21:33.365",
+      "final_video_ad_start_seconds": 1477.76,
+      "final_video_ad_start_formatted": "00:24:37.760",
+      "final_video_ad_end_seconds": 1506.72,
+      "final_video_ad_end_formatted": "00:25:06.720"
     }
   ],
   "timeline_segments": [
@@ -71,42 +71,42 @@
       "segment_index": 0,
       "final_video_start_seconds": 0.0,
       "final_video_start_formatted": "00:00:00.000",
-      "final_video_end_seconds": 422.635,
-      "final_video_end_formatted": "00:07:02.635",
-      "duration_seconds": 422.635,
+      "final_video_end_seconds": 422.592,
+      "final_video_end_formatted": "00:07:02.592",
+      "duration_seconds": 422.592,
       "original_video_start_seconds": 0.0,
-      "original_video_end_seconds": 422.635
+      "original_video_end_seconds": 422.592
     },
     {
       "type": "ad",
       "ad_index": 1,
       "ad_filename": "detected_ad_001.mp4",
-      "final_video_start_seconds": 422.635,
-      "final_video_start_formatted": "00:07:02.635",
-      "final_video_end_seconds": 465.21,
-      "final_video_end_formatted": "00:07:45.210",
-      "duration_seconds": 42.576
+      "final_video_start_seconds": 422.592,
+      "final_video_start_formatted": "00:07:02.592",
+      "final_video_end_seconds": 470.912,
+      "final_video_end_formatted": "00:07:50.912",
+      "duration_seconds": 48.32
     },
     {
       "type": "video_content",
       "segment_index": 1,
-      "final_video_start_seconds": 465.21,
-      "final_video_start_formatted": "00:07:45.210",
-      "final_video_end_seconds": 479.111,
-      "final_video_end_formatted": "00:07:59.111",
-      "duration_seconds": 13.901,
-      "original_video_start_seconds": 422.635,
-      "original_video_end_seconds": 436.535
+      "final_video_start_seconds": 470.912,
+      "final_video_start_formatted": "00:07:50.912",
+      "final_video_end_seconds": 483.712,
+      "final_video_end_formatted": "00:08:03.712",
+      "duration_seconds": 12.8,
+      "original_video_start_seconds": 422.592,
+      "original_video_end_seconds": 435.392
     },
     {
       "type": "ad",
       "ad_index": 2,
       "ad_filename": "detected_ad_002.mp4",
-      "final_video_start_seconds": 479.111,
-      "final_video_start_formatted": "00:07:59.111",
+      "final_video_start_seconds": 483.712,
+      "final_video_start_formatted": "00:08:03.712",
       "final_video_end_seconds": 535.629,
       "final_video_end_formatted": "00:08:55.629",
-      "duration_seconds": 56.518
+      "duration_seconds": 51.917
     },
     {
       "type": "video_content",
@@ -116,8 +116,8 @@
       "final_video_end_seconds": 901.953,
       "final_video_end_formatted": "00:15:01.953",
       "duration_seconds": 366.325,
-      "original_video_start_seconds": 436.535,
-      "original_video_end_seconds": 802.86
+      "original_video_start_seconds": 435.392,
+      "original_video_end_seconds": 801.717
     },
     {
       "type": "ad",
@@ -125,62 +125,62 @@
       "ad_filename": "detected_ad_003.mp4",
       "final_video_start_seconds": 901.953,
       "final_video_start_formatted": "00:15:01.953",
-      "final_video_end_seconds": 958.222,
-      "final_video_end_formatted": "00:15:58.222",
-      "duration_seconds": 56.268
+      "final_video_end_seconds": 957.088,
+      "final_video_end_formatted": "00:15:57.088",
+      "duration_seconds": 55.135
     },
     {
       "type": "video_content",
       "segment_index": 3,
-      "final_video_start_seconds": 958.222,
-      "final_video_start_formatted": "00:15:58.222",
-      "final_video_end_seconds": 1029.056,
-      "final_video_end_formatted": "00:17:09.056",
-      "duration_seconds": 70.834,
-      "original_video_start_seconds": 802.86,
-      "original_video_end_seconds": 873.695
+      "final_video_start_seconds": 957.088,
+      "final_video_start_formatted": "00:15:57.088",
+      "final_video_end_seconds": 1029.728,
+      "final_video_end_formatted": "00:17:09.728",
+      "duration_seconds": 72.64,
+      "original_video_start_seconds": 801.717,
+      "original_video_end_seconds": 874.357
     },
     {
       "type": "ad",
       "ad_index": 4,
       "ad_filename": "detected_ad_004.mp4",
-      "final_video_start_seconds": 1029.056,
-      "final_video_start_formatted": "00:17:09.056",
-      "final_video_end_seconds": 1058.189,
-      "final_video_end_formatted": "00:17:38.189",
-      "duration_seconds": 29.133
+      "final_video_start_seconds": 1029.728,
+      "final_video_start_formatted": "00:17:09.728",
+      "final_video_end_seconds": 1058.752,
+      "final_video_end_formatted": "00:17:38.752",
+      "duration_seconds": 29.024
     },
     {
       "type": "video_content",
       "segment_index": 4,
-      "final_video_start_seconds": 1058.189,
-      "final_video_start_formatted": "00:17:38.189",
-      "final_video_end_seconds": 1478.534,
-      "final_video_end_formatted": "00:24:38.534",
-      "duration_seconds": 420.346,
-      "original_video_start_seconds": 873.695,
-      "original_video_end_seconds": 1294.04
+      "final_video_start_seconds": 1058.752,
+      "final_video_start_formatted": "00:17:38.752",
+      "final_video_end_seconds": 1477.76,
+      "final_video_end_formatted": "00:24:37.760",
+      "duration_seconds": 419.008,
+      "original_video_start_seconds": 874.357,
+      "original_video_end_seconds": 1293.365
     },
     {
       "type": "ad",
       "ad_index": 5,
       "ad_filename": "detected_ad_005.mp4",
-      "final_video_start_seconds": 1478.534,
-      "final_video_start_formatted": "00:24:38.534",
-      "final_video_end_seconds": 1511.08,
-      "final_video_end_formatted": "00:25:11.080",
-      "duration_seconds": 32.546
+      "final_video_start_seconds": 1477.76,
+      "final_video_start_formatted": "00:24:37.760",
+      "final_video_end_seconds": 1506.72,
+      "final_video_end_formatted": "00:25:06.720",
+      "duration_seconds": 28.96
     },
     {
       "type": "video_content",
       "segment_index": 5,
-      "final_video_start_seconds": 1511.08,
-      "final_video_start_formatted": "00:25:11.080",
+      "final_video_start_seconds": 1506.72,
+      "final_video_start_formatted": "00:25:06.720",
       "final_video_end_seconds": 1826.506,
       "final_video_end_formatted": "00:30:26.506",
-      "duration_seconds": 315.426,
-      "original_video_start_seconds": 1294.04,
-      "original_video_end_seconds": 1609.466
+      "duration_seconds": 319.786,
+      "original_video_start_seconds": 1293.365,
+      "original_video_end_seconds": 1613.151
     }
   ]
 }

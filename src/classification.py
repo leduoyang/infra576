@@ -13,7 +13,8 @@ import numpy as np
 
 BRIDGE_GAP_SECONDS = 20.0
 MIN_AD_DURATION = 20.0
-BOUNDARY_MARGIN = 3.0
+BOUNDARY_MARGIN = 50.0
+BOUNDARY_MAX_DURATION = 45.0
 
 ABS_THRESHOLD = 1.5       # absolute combined score threshold
 Z_STRONG = 3.0            # any single-feature z above this = ad
@@ -125,16 +126,89 @@ def classify_segments(segments: list[dict], duration: float, global_profile: dic
     # Speech-based rescue: find sustained low-speech / high no-speech runs missed above
     classified = _speech_rescue(segments, classified, duration)
     classified = _merge_consecutive(classified)
+
+    # Audio onset boundary refinement: snap ad start/end to strongest onset (±window)
+    onset_times = gp.get("onset_times")
+    onset_strengths = gp.get("onset_strengths")
+    if onset_times:
+        classified = _snap_ad_boundaries(classified, onset_times, onset_strengths, window=6.0)
     return classified
+
+
+def _snap_ad_boundaries(segments: list[dict], onset_times, onset_strengths=None, window: float = 6.0) -> list[dict]:
+    """Snap each ad's start/end to the strongest audio onset within ±window.
+    Adjust the adjacent content segment so the timeline stays contiguous."""
+    if not onset_times:
+        return segments
+    times_arr = np.asarray(onset_times, dtype=float)
+    order = np.argsort(times_arr)
+    onsets = times_arr[order]
+    if onset_strengths is not None and len(onset_strengths) == len(onset_times):
+        strengths = np.asarray(onset_strengths, dtype=float)[order]
+    else:
+        strengths = np.ones_like(onsets)
+    segs = [s.copy() for s in segments]
+
+    def strongest(t: float, lo: float, hi: float):
+        mask = (onsets >= lo) & (onsets <= hi)
+        if not mask.any():
+            return None
+        cand_t = onsets[mask]
+        cand_s = strengths[mask]
+        # Prefer strong onsets close to t: score = strength / (1 + distance)
+        score = cand_s / (1.0 + np.abs(cand_t - t))
+        return float(cand_t[np.argmax(score)])
+
+    for i, s in enumerate(segs):
+        if s["segment_type"] != "ad":
+            continue
+        # snap start
+        t = s["start_seconds"]
+        lo = t - window
+        hi = t + window
+        if i > 0:
+            lo = max(lo, segs[i - 1]["start_seconds"] + 1.0)
+            hi = min(hi, s["end_seconds"] - 1.0)
+        new_start = strongest(t, lo, hi)
+        if new_start is not None:
+            s["start_seconds"] = new_start
+            if i > 0:
+                segs[i - 1]["end_seconds"] = new_start
+                segs[i - 1]["duration_seconds"] = (
+                    segs[i - 1]["end_seconds"] - segs[i - 1]["start_seconds"]
+                )
+        # snap end
+        t = s["end_seconds"]
+        lo = t - window
+        hi = t + window
+        if i + 1 < len(segs):
+            hi = min(hi, segs[i + 1]["end_seconds"] - 1.0)
+            lo = max(lo, s["start_seconds"] + 1.0)
+        new_end = strongest(t, lo, hi)
+        if new_end is not None:
+            s["end_seconds"] = new_end
+            if i + 1 < len(segs):
+                segs[i + 1]["start_seconds"] = new_end
+                segs[i + 1]["duration_seconds"] = (
+                    segs[i + 1]["end_seconds"] - segs[i + 1]["start_seconds"]
+                )
+        s["duration_seconds"] = s["end_seconds"] - s["start_seconds"]
+    return segs
 
 
 def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: float) -> list[dict]:
     """Mark as ad any contiguous run of raw shots with sustained non-speech signal
-    (median no_speech_prob >= 0.35, median word_rate <= 1.0, total duration >= 30s)."""
+    (median no_speech_prob >= 0.35, median word_rate <= 1.0, total duration >= 30s).
+
+    Intro/outro suppression: runs touching the first 10% or last 8% of the video
+    are hard-suppressed. GT only labels inserted ads; original intros/outros are
+    not ads even if they look like ads acoustically (silent/musical)."""
     if not raw_segments:
         return classified
 
-    # Mark raw segs
+    intro_cutoff = duration * 0.10
+    outro_cutoff = duration * 0.92
+
     flags = []
     for s in raw_segments:
         ns = float(s.get("no_speech_prob", 0.0))
@@ -142,7 +216,6 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
         lp = float(s.get("avg_logprob", 0.0))
         flags.append(ns >= 0.35 and wr <= 1.5 and lp <= -0.8)
 
-    # Find runs
     runs = []
     i = 0
     while i < len(flags):
@@ -153,6 +226,9 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
             start = raw_segments[i]["start_seconds"]
             end = raw_segments[j]["end_seconds"]
             if end - start >= 30.0:
+                if start <= intro_cutoff or end >= outro_cutoff:
+                    i = j + 1
+                    continue
                 runs.append((start, end))
             i = j + 1
         else:
@@ -161,11 +237,9 @@ def _speech_rescue(raw_segments: list[dict], classified: list[dict], duration: f
     if not runs:
         return classified
 
-    # Build content mask, flip runs to ad
     for start, end in runs:
         classified = _force_ad_region(classified, start, end)
 
-    # Re-apply boundary filter
     classified = _drop_boundary_ads(classified, duration, BOUNDARY_MARGIN)
     return classified
 
@@ -257,7 +331,7 @@ def _drop_boundary_ads(segments: list[dict], duration: float, margin: float) -> 
     for s in segments:
         near_start = s["start_seconds"] <= margin
         near_end = s["end_seconds"] >= duration - margin
-        if s["segment_type"] == "ad" and (near_start or near_end) and s["duration_seconds"] < 20.0:
+        if s["segment_type"] == "ad" and (near_start or near_end) and s["duration_seconds"] < BOUNDARY_MAX_DURATION:
             f = s.copy()
             f["segment_type"] = "video_content"
             f["is_content"] = True
