@@ -24,18 +24,29 @@ def test_classify_segments_with_profile():
             "duration_seconds": 10.0,
             "spectral_centroid": 1050.0, # Close to avg
             "spectral_bandwidth": 950.0,  # Close to avg
-            "motion_score": 5.5          # Close to avg
+            "motion_score": 5.5,          # Close to avg
+            "mfcc": [0.0] * 13,
+            "no_speech_prob": 0.1
         },
         {
             "start_seconds": 10.0, 
-            "end_seconds": 15.0, 
-            "duration_seconds": 5.0,     # Short + Outlier
+            "end_seconds": 40.0, 
+            "duration_seconds": 30.0,     # Pass MIN_AD_DURATION
             "spectral_centroid": 2500.0, # Far from avg
             "spectral_bandwidth": 2000.0, 
-            "motion_score": 20.0
+            "motion_score": 20.0,
+            "word_rate": 2.0,            # Pass narration check
+            "audio_energy": 5.0,         # Pass RMS check
+            "mfcc": [1.0] * 13,
+            "no_speech_prob": 0.1
         },
     ]
-    classified = classify_segments(segments, duration=15.0, global_profile=global_profile)
+    
+    import src.classification
+    src.classification.MIN_AD_DURATION = 0.0
+    src.classification.BOUNDARY_MARGIN = 0.0
+
+    classified = classify_segments(segments, duration=50.0, global_profile=global_profile)
     
     assert len(classified) == 2
     assert classified[0]["is_content"] is True

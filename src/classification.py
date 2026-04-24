@@ -10,6 +10,8 @@ moderately. Then post-process (bridge fragments, drop shorts, drop boundaries).
 """
 
 import numpy as np
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics.pairwise import cosine_distances
 
 BRIDGE_GAP_SECONDS = 20.0
 MIN_AD_DURATION = 20.0
@@ -61,6 +63,69 @@ def _speech_score(seg: dict) -> float:
         score += 0.7 * min(1.0, (-lp - 1.0))
     score += sponsor * 1.0
     return score
+
+
+def _identify_main_speakers(segments: list[dict], threshold_seconds: float = 180.0) -> list[np.ndarray]:
+    """Clusters MFCCs to find all speakers who talk for more than threshold_seconds in content segments."""
+    speech_segs = [s for s in segments if s.get("no_speech_prob", 1.0) < 0.3 and s.get("mfcc") and s.get("is_content", True)]
+    
+    valid_segs = []
+    for s in speech_segs:
+        if np.linalg.norm(s["mfcc"]) > 0:
+            valid_segs.append(s)
+
+    if not valid_segs:
+        return []
+
+    X = np.array([s["mfcc"] for s in valid_segs])
+    if len(X) < 2:
+        if valid_segs[0].get("duration_seconds", 0) >= threshold_seconds:
+            return [X[0]]
+        return []
+
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        metric='cosine',
+        linkage='average',
+        distance_threshold=0.1
+    )
+    labels = clustering.fit_predict(X)
+
+    main_speakers = []
+    unique_labels = set(labels)
+    for label in unique_labels:
+        cluster_segs = [s for i, s in enumerate(valid_segs) if labels[i] == label]
+        total_duration = sum(s.get("duration_seconds", 0) for s in cluster_segs)
+        if total_duration >= threshold_seconds:
+            cluster_mfccs = np.array([s["mfcc"] for s in cluster_segs])
+            centroid = np.median(cluster_mfccs, axis=0)
+            main_speakers.append(centroid)
+
+    return main_speakers
+
+
+def _rescue_main_speakers(classified: list[dict], main_speakers: list[np.ndarray]) -> list[dict]:
+    """Rescues 'ad' segments that contain a main speaker's voice."""
+    if not main_speakers:
+        return classified
+
+    for s in classified:
+        if not s["is_content"] and s.get("mfcc") and s.get("no_speech_prob", 1.0) < 0.3:
+            seg_mfcc = np.array(s["mfcc"])
+            norm_s = np.linalg.norm(seg_mfcc)
+            if norm_s == 0:
+                continue
+
+            for speaker in main_speakers:
+                norm_sp = np.linalg.norm(speaker)
+                if norm_sp > 0:
+                    sim = np.dot(seg_mfcc, speaker) / (norm_s * norm_sp)
+                    if sim > 0.98:
+                        s["is_content"] = True
+                        s["segment_type"] = "video_content"
+                        s["confidence"] = 0.5  # Lower confidence since it was rescued
+                        break
+    return classified
 
 
 def classify_segments(segments: list[dict], duration: float, global_profile: dict = None) -> list[dict]:
@@ -116,6 +181,9 @@ def classify_segments(segments: list[dict], duration: float, global_profile: dic
             sp_s / 2.5,
         )))
         classified.append(s)
+
+    main_speakers = _identify_main_speakers(classified, threshold_seconds=180.0)
+    classified = _rescue_main_speakers(classified, main_speakers)
 
     classified = _merge_consecutive(classified)
     classified = _bridge_ad_fragments(classified, BRIDGE_GAP_SECONDS)

@@ -28,6 +28,7 @@ Each shot gets:
 | `audio_energy` | RMS over PCM samples | loudness (ads mixed louder than content) |
 | `spectral_centroid` | librosa | brightness of the mix (music/jingle signature) |
 | `spectral_bandwidth` | librosa | spread of frequency energy |
+| `mfcc` | librosa | Mel-frequency cepstral coefficients (vocal timbre / acoustic fingerprint) |
 | `motion_score` | frame-diff on downsampled grayscale | cuts + action |
 | `color_variance` | per-frame RGB variance | busy/colorful visuals |
 | `no_speech_prob` | Whisper | high = music/noise/silence |
@@ -67,15 +68,16 @@ In order:
    - (a) single long static shot (1 shot, >35s, motion<10, quiet) — real ads cut every 5–15s.
    - (b) short pure-silent quiet region (≥90% shots ns≥0.95 ∧ wr<0.1, <40s, not loud) — content transitions.
    - (c) narration-absent low-motion region (0 narration shots, 0 high-motion shots, <45s, quiet) — silent content cutaways. Motion gate (≥2.5× video motion median) preserves action ads.
-7. **Speech rescue** — scan raw shots for sustained runs matching any of:
+7. **Multi-Speaker Diarization Rescue** — runs `AgglomerativeClustering` on 12D `mfcc` vectors from content segments. Any voice active for >180s is whitelisted. Ad segments (ns<0.3) matching a whitelisted speaker's timbre (>0.98 cosine similarity) are rescued to content.
+8. **Speech rescue** — scan raw shots for sustained runs matching any of:
    - low-speech run (ns≥0.35, wr≤2.0, lp≤-0.8, ≥30s) with a strict dual silence filter (rejected only if *pure* AND *quiet* — loud jingles kept).
    - sandwich pattern (silent shot between two speech-heavy shots) — catches short silent ads.
    - visual rescue (color_variance + motion spike) — catches voiceover ads with visual flair.
    - **loud-narration rescue** (RMS ≥ 1.8× median + ns≤0.1 + wr≥0.2 + motion≥20) — catches broadcast-style ads.
-8. **Merge** + **drop content-like** again.
-9. **Trim dialogue boundaries** — trim leading/trailing shots with ns≤0.15 ∧ wr≥2.5 ∧ motion<15 (content dialogue that the classifier glued onto the ad), when cumulative trim ≥10s.
-10. **Merge**.
-11. **Onset snap** — snap ad start/end to strongest audio onset within ±6s; adjacent content segment is contracted/expanded to keep the timeline contiguous.
+9. **Merge** + **drop content-like** again.
+10. **Trim dialogue boundaries** — trim leading/trailing shots with ns≤0.15 ∧ wr≥2.5 ∧ motion<15 (content dialogue that the classifier glued onto the ad), when cumulative trim ≥10s.
+11. **Merge**.
+12. **Onset snap** — snap ad start/end to strongest audio onset within ±6s; adjacent content segment is contracted/expanded to keep the timeline contiguous.
 
 ### Why this works
 
