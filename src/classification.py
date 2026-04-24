@@ -122,13 +122,18 @@ def classify_segments(segments: list[dict], duration: float, global_profile: dic
     classified = _drop_short_ads(classified, MIN_AD_DURATION)
     classified = _drop_boundary_ads(classified, duration, BOUNDARY_MARGIN)
     classified = _merge_consecutive(classified)
-    classified = _drop_content_like_ads(classified, segments)
+    classified = _drop_content_like_ads(classified, segments, gp)
 
     # Speech-based rescue: find sustained low-speech / high no-speech runs missed above
     classified = _speech_rescue(segments, classified, duration)
     classified = _merge_consecutive(classified)
-    classified = _drop_content_like_ads(classified, segments)
+    classified = _drop_content_like_ads(classified, segments, gp)
     classified = _trim_dialogue_boundaries(classified, segments)
+    classified = _merge_consecutive(classified)
+
+    # Aspect-ratio boundary refinement: when show is letterboxed, snap ad
+    # start/end to the shot boundary where AR diverges from baseline.
+    classified = _snap_ad_boundaries_by_ar(classified, segments, gp)
     classified = _merge_consecutive(classified)
 
     # Audio onset boundary refinement: snap ad start/end to strongest onset (±window)
@@ -190,6 +195,84 @@ def _snap_ad_boundaries(segments: list[dict], onset_times, onset_strengths=None,
             lo = max(lo, s["start_seconds"] + 1.0)
         new_end = strongest(t, lo, hi)
         if new_end is not None:
+            s["end_seconds"] = new_end
+            if i + 1 < len(segs):
+                segs[i + 1]["start_seconds"] = new_end
+                segs[i + 1]["duration_seconds"] = (
+                    segs[i + 1]["end_seconds"] - segs[i + 1]["start_seconds"]
+                )
+        s["duration_seconds"] = s["end_seconds"] - s["start_seconds"]
+    return segs
+
+
+def _snap_ad_boundaries_by_ar(classified: list[dict], raw_segments: list[dict], gp: dict | None) -> list[dict]:
+    """Snap ad start/end to the shot boundary where AR diverges from baseline.
+
+    Only fires when the show is non-16:9 (gp_ar >= 2.0 or <= 1.65). For each ad
+    we look at raw shots overlapping a window around current start/end, and pick
+    the boundary between a baseline-AR shot and a non-baseline-AR shot closest
+    to current start/end (within ±15s). The adjacent content segment is
+    adjusted to keep the timeline contiguous.
+    """
+    if not raw_segments or not classified:
+        return classified
+    gp = gp or {}
+    gp_ar = float(gp.get("avg_aspect_ratio", float("nan")))
+    if np.isnan(gp_ar) or not (gp_ar >= 2.0 or gp_ar <= 1.65):
+        return classified
+
+    AR_TOL = 0.04
+    WINDOW = 15.0
+
+    def matches_baseline(shot: dict) -> bool:
+        a = float(shot.get("aspect_ratio", float("nan")))
+        if np.isnan(a):
+            return False
+        return abs(a - gp_ar) / max(gp_ar, 1e-3) < AR_TOL
+
+    segs = [s.copy() for s in classified]
+
+    def candidate_boundary(t: float, want_left_baseline: bool) -> float | None:
+        """Find shot-boundary timestamp within ±WINDOW of t where the
+        baseline-vs-non-baseline transition matches the requested direction."""
+        best_t = None
+        best_d = WINDOW
+        for k in range(1, len(raw_segments)):
+            b = raw_segments[k]["start_seconds"]
+            d = abs(b - t)
+            if d > WINDOW:
+                continue
+            left = matches_baseline(raw_segments[k - 1])
+            right = matches_baseline(raw_segments[k])
+            if want_left_baseline and left and not right and d < best_d:
+                best_d = d
+                best_t = b
+            if (not want_left_baseline) and right and not left and d < best_d:
+                best_d = d
+                best_t = b
+        return best_t
+
+    for i, s in enumerate(segs):
+        if s["segment_type"] != "ad":
+            continue
+        # Snap start: want baseline-AR shot left, non-baseline-AR shot right.
+        new_start = candidate_boundary(s["start_seconds"], want_left_baseline=True)
+        if new_start is not None:
+            lo = segs[i - 1]["start_seconds"] + 1.0 if i > 0 else 0.0
+            hi = s["end_seconds"] - 1.0
+            new_start = max(lo, min(hi, new_start))
+            s["start_seconds"] = new_start
+            if i > 0:
+                segs[i - 1]["end_seconds"] = new_start
+                segs[i - 1]["duration_seconds"] = (
+                    segs[i - 1]["end_seconds"] - segs[i - 1]["start_seconds"]
+                )
+        # Snap end: want non-baseline-AR shot left, baseline-AR shot right.
+        new_end = candidate_boundary(s["end_seconds"], want_left_baseline=False)
+        if new_end is not None:
+            lo = s["start_seconds"] + 1.0
+            hi = segs[i + 1]["end_seconds"] - 1.0 if i + 1 < len(segs) else s["end_seconds"]
+            new_end = max(lo, min(hi, new_end))
             s["end_seconds"] = new_end
             if i + 1 < len(segs):
                 segs[i + 1]["start_seconds"] = new_end
@@ -460,19 +543,27 @@ def _bridge_ad_fragments(segments: list[dict], gap_seconds: float) -> list[dict]
     return out
 
 
-def _drop_content_like_ads(classified: list[dict], raw_segments: list[dict]) -> list[dict]:
+def _drop_content_like_ads(classified: list[dict], raw_segments: list[dict], gp: dict | None = None) -> list[dict]:
     """Reject ad segments that look like content (static cutaways, quiet silence).
 
-    Two patterns:
+    Patterns:
     (a) Single long static shot: 1 shot covers the whole ad, duration > 35s,
         motion < 10, mean RMS < 0.5× video median. Real ads cut every 5-15s.
     (b) Short pure-silent quiet region: ≥90% shots pure-silent (ns≥0.95, wr<0.1),
         duration < 40s, mean RMS < 2.5× video median. Loud silent jingles kept.
+    (c) Narration-absent low-motion region.
+    (d) Letterbox-baseline match: when show is non-16:9 (cinematic 2.35:1
+        or pillar-boxed 4:3), an ad whose active aspect ratio matches the
+        show baseline within 4% is almost certainly content. Inserted ads
+        in this dataset are full-frame 16:9.
     """
     if not raw_segments:
         return classified
     rms_all = np.asarray([float(s.get("audio_energy", 0.0)) for s in raw_segments])
     med_rms = float(np.median(rms_all)) + 1e-6
+    gp = gp or {}
+    gp_ar = float(gp.get("avg_aspect_ratio", float("nan")))
+    show_letterboxed = (not np.isnan(gp_ar)) and (gp_ar >= 2.0 or gp_ar <= 1.65)
     out = []
     for seg in classified:
         if seg.get("segment_type") != "ad":
@@ -521,6 +612,18 @@ def _drop_content_like_ads(classified: list[dict], raw_segments: list[dict]) -> 
             flipped["is_content"] = True
             out.append(flipped)
             continue
+        # (d) AR matches non-16:9 baseline → letterbox bars present → content
+        if show_letterboxed:
+            shot_ars = [float(r.get("aspect_ratio", float("nan"))) for r in shots_in]
+            shot_ars = [a for a in shot_ars if not np.isnan(a)]
+            if shot_ars:
+                seg_ar = float(np.median(shot_ars))
+                if abs(seg_ar - gp_ar) / max(gp_ar, 1e-3) < 0.04:
+                    flipped = seg.copy()
+                    flipped["segment_type"] = "video_content"
+                    flipped["is_content"] = True
+                    out.append(flipped)
+                    continue
         out.append(seg.copy())
     return out
 

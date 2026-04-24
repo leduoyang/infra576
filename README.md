@@ -30,6 +30,7 @@ Each shot gets:
 | `spectral_bandwidth` | librosa | spread of frequency energy |
 | `motion_score` | frame-diff on downsampled grayscale | cuts + action |
 | `color_variance` | per-frame RGB variance | busy/colorful visuals |
+| `aspect_ratio` | active (non-letterbox) region of sampled frames | shows shot in 2.35:1 cinema scope have black bars; inserted ads are full-frame 16:9. The bars vanishing is a hard ad signal. |
 | `no_speech_prob` | Whisper | high = music/noise/silence |
 | `word_rate` | Whisper tokens / duration | narration density |
 | `avg_logprob` | Whisper | low (very negative) = confused transcription (often overlaid music) |
@@ -37,6 +38,7 @@ Each shot gets:
 
 Plus per-video **global profile**:
 - `avg_centroid`, `avg_bandwidth`, `avg_motion` — the "baseline" for this video.
+- `avg_aspect_ratio` — median active aspect ratio across the video (the show's natural framing).
 - `onset_times` / `onset_strengths` — audio onsets used for boundary snapping.
 
 ## Classification logic
@@ -63,10 +65,11 @@ In order:
 3. **Drop short ads** — anything < 20s is dropped (stray outliers).
 4. **Drop boundary ads** — ad-looking segments within 50s of video start/end are intro/outro, not inserted ads.
 5. **Merge** again.
-6. **Drop content-like ads** — three flip-to-content rules:
+6. **Drop content-like ads** — four flip-to-content rules:
    - (a) single long static shot (1 shot, >35s, motion<10, quiet) — real ads cut every 5–15s.
    - (b) short pure-silent quiet region (≥90% shots ns≥0.95 ∧ wr<0.1, <40s, not loud) — content transitions.
    - (c) narration-absent low-motion region (0 narration shots, 0 high-motion shots, <45s, quiet) — silent content cutaways. Motion gate (≥2.5× video motion median) preserves action ads.
+   - (d) **aspect-ratio matches show baseline** — only fires when the show is non-16:9 (gp_ar ≥ 2.0 or ≤ 1.65). If the segment's median active AR matches the video baseline within 4%, it is the show (letterbox bars present), not an inserted full-frame ad.
 7. **Speech rescue** — scan raw shots for sustained runs matching any of:
    - low-speech run (ns≥0.35, wr≤2.0, lp≤-0.8, ≥30s) with a strict dual silence filter (rejected only if *pure* AND *quiet* — loud jingles kept).
    - sandwich pattern (silent shot between two speech-heavy shots) — catches short silent ads.
@@ -75,7 +78,9 @@ In order:
 8. **Merge** + **drop content-like** again.
 9. **Trim dialogue boundaries** — trim leading/trailing shots with ns≤0.15 ∧ wr≥2.5 ∧ motion<15 (content dialogue that the classifier glued onto the ad), when cumulative trim ≥10s.
 10. **Merge**.
-11. **Onset snap** — snap ad start/end to strongest audio onset within ±6s; adjacent content segment is contracted/expanded to keep the timeline contiguous.
+11. **Aspect-ratio snap** — when the show is letterboxed, snap ad start/end to the nearest shot boundary (within ±15s) where the per-shot AR crosses the baseline-vs-non-baseline threshold. Adjacent content is adjusted to keep the timeline contiguous.
+12. **Merge**.
+13. **Onset snap** — snap ad start/end to strongest audio onset within ±6s; adjacent content segment is contracted/expanded to keep the timeline contiguous.
 
 ### Why this works
 

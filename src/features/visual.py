@@ -80,19 +80,49 @@ def analyze_color_variance(frames_with_ts: List[dict], start_sec: float, end_sec
     variance = np.mean(np.var(hists_array, axis=0))
     return float(variance)
 
+def compute_active_aspect_ratio(frame: np.ndarray, dark_thr: int = 18) -> float:
+    """Aspect ratio of the non-letterbox/pillarbox region.
+
+    Crops rows/cols whose max luminance is below dark_thr (treated as black bars).
+    Returns NaN for fade-to-black frames where active region is degenerate.
+    Show vs ad often differ here: cinematic shows are 2.35:1 letterboxed,
+    inserted ads typically fill 16:9.
+    """
+    g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    rows = np.where(g.max(axis=1) > dark_thr)[0]
+    cols = np.where(g.max(axis=0) > dark_thr)[0]
+    if len(rows) < 2 or len(cols) < 2:
+        return float("nan")
+    aw = int(cols[-1] - cols[0] + 1)
+    ah = int(rows[-1] - rows[0] + 1)
+    return float(aw) / float(ah)
+
+
+def analyze_aspect_ratio_for_segment(frames_with_ts: List[dict], start_sec: float, end_sec: float) -> float:
+    """Median active aspect ratio across frames in [start_sec, end_sec). NaN if none."""
+    seg = [f["frame"] for f in frames_with_ts if start_sec <= f["timestamp_seconds"] < end_sec]
+    if not seg:
+        return float("nan")
+    ars = [compute_active_aspect_ratio(f) for f in seg]
+    ars = [a for a in ars if not np.isnan(a)]
+    if not ars:
+        return float("nan")
+    return float(np.median(ars))
+
+
 def compute_global_visual_profile(frames_with_ts: List[dict]) -> dict:
     """
     Computes the 'Universal Visual Profile' for the entire video.
     """
     if len(frames_with_ts) < 2:
-        return {"avg_motion": 0.0, "avg_color_variance": 0.0}
-    
+        return {"avg_motion": 0.0, "avg_color_variance": 0.0, "avg_aspect_ratio": float("nan")}
+
     # 1. Avg Motion
     diffs = []
     for i in range(1, len(frames_with_ts)):
         diffs.append(compute_frame_diff(frames_with_ts[i-1]["frame"], frames_with_ts[i]["frame"]))
     avg_motion = float(np.mean(diffs))
-    
+
     # 2. Avg Color Variance (sampled every 10th frame for speed if many)
     sampled_frames = frames_with_ts[::max(1, len(frames_with_ts)//20)] # Sample ~20 frames
     hists = []
@@ -100,9 +130,15 @@ def compute_global_visual_profile(frames_with_ts: List[dict]) -> dict:
         hist = cv2.calcHist([f["frame"]], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
         hists.append(hist.flatten())
     avg_color_variance = float(np.mean(np.var(np.array(hists), axis=0))) if hists else 0.0
-    
+
+    # 3. Baseline aspect ratio (median of active region across sampled frames)
+    ars = [compute_active_aspect_ratio(f["frame"]) for f in sampled_frames]
+    ars = [a for a in ars if not np.isnan(a)]
+    avg_aspect_ratio = float(np.median(ars)) if ars else float("nan")
+
     return {
         "avg_motion": avg_motion,
         "avg_color_variance": avg_color_variance,
+        "avg_aspect_ratio": avg_aspect_ratio,
     }
 

@@ -3,10 +3,11 @@ import subprocess
 import json
 import numpy as np
 from src.features.visual import (
-    detect_scenes_scenedetect, 
-    analyze_motion_for_segment, 
+    detect_scenes_scenedetect,
+    analyze_motion_for_segment,
     analyze_color_variance,
-    compute_global_visual_profile
+    analyze_aspect_ratio_for_segment,
+    compute_global_visual_profile,
 )
 from src.features.audio import analyze_audio_features, compute_global_audio_profile
 from src.features.speech import transcribe, speech_features_for_segment
@@ -59,9 +60,10 @@ def run_segmentation_pipeline(
         audio_feats = analyze_audio_features(y, sr, start, end, audio_offset)
         scene.update(audio_feats)
         
-        # Visual features (Motion and Color)
+        # Visual features (Motion, Color, Active aspect ratio)
         scene["motion_score"] = analyze_motion_for_segment(frames, start, end)
         scene["color_variance"] = analyze_color_variance(frames, start, end)
+        scene["aspect_ratio"] = analyze_aspect_ratio_for_segment(frames, start, end)
 
         # Speech features (Whisper)
         scene.update(speech_features_for_segment(transcript, start, end))

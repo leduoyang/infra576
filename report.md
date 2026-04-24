@@ -587,3 +587,63 @@ python3 -m venv .venv
 # 快速 classifier 調參（用 cache）
 .venv/bin/python src/tune.py
 ```
+
+---
+
+## 第 15 次修正：Aspect-ratio 特徵（v15）
+
+**動機**：使用者觀察到「影片 ratio 在廣告出現時常常不一樣」。逐影片探查 active aspect ratio（裁掉黑邊後的可視區）：
+
+| 影片 | 內容 AR（中位數） | 廣告 AR（中位數） | 差異 |
+|---|---|---|---|
+| test_001 | 2.36（cinemascope letterbox） | 1.78（full 16:9） | **明顯** |
+| test_002 | 1.78 / 1.80 | 1.78 | 無 |
+| test_003 | 1.82–1.84 | 1.77 / 2.68 / 1.78 | 部分 |
+| test_004 | 1.78 | 1.78 / 2.35 / 1.78 | 部分（ad2） |
+| test_005 | 2.34（cinemascope letterbox） | 1.78（full 16:9） | **明顯** |
+
+模式：show 拍 2.35:1 cinema scope（或 4:3 pillar-box），插入的廣告幾乎都是 full-frame 16:9 → letterbox 黑邊在廣告開始時瞬間消失，是強訊號。
+
+### 實作
+
+- `src/features/visual.py` 新增 `compute_active_aspect_ratio(frame)`：以 luminance > 18 為門檻找非黑邊範圍；fade-to-black 回傳 NaN。`analyze_aspect_ratio_for_segment(...)` 取 shot 內各 frame 的 median。`compute_global_visual_profile` 加 `avg_aspect_ratio`（全片 sampled frames 的 median）。
+- `src/segmentation.py`：每個 shot 計算 `aspect_ratio`。
+- `src/classification.py`：
+  - `_drop_content_like_ads` 新增規則 (d)：當 `gp_ar ≥ 2.0` 或 `≤ 1.65`（show 為非 16:9），若 ad segment 的 median AR 與 baseline 差距 < 4%，翻回 content。**只在 letterboxed show 上觸發，避免影響 test_002/test_004 的 16:9 內容。**
+  - 新 `_snap_ad_boundaries_by_ar`：letterbox show 中，把 ad start/end 在 ±15s 窗內 snap 到「shot AR 是否符合 baseline」轉換點，相鄰 content 段同步調整。
+
+### 結果（同樣 cache 下 ablation）
+
+| 指標 | AR 關 | **AR 開** | Δ |
+|---|---|---|---|
+| test_001 | 0.800 | 0.800 | — |
+| test_002 | 1.000 | 1.000 | — |
+| test_003 | 0.000 | 0.000 | — |
+| test_004 | 1.000 | 1.000 | — |
+| **test_005 F1@.5** | **0.857** | **1.000** | **+0.143 ✅** |
+| test_005 meanIoU | 0.856 | **0.966** | +0.110 |
+| **mean F1@0.5** | 0.731 | **0.760** | +0.029 |
+
+test_005 的 FP [397.8-439.9]：AR=2.335 ≡ baseline 2.336（差距 0.04%），rule (d) 直接翻回 content。同時 ad2/ad3 因 AR snap 邊界更準（IoU 0.90→0.95、0.68→0.95）。
+
+### 副作用：cache regen 暴露既有脆弱性
+
+刪除 `features_cache/test_*.json` 重抽特徵後，**完全不啟用 AR 程式碼**也會出現：
+- test_001 ad3 漏抓（v14 = ✅，現在 = ❌）
+- test_003 全崩（3 GT, 0 TP, 4 FP；v14 = 全 ✅）
+
+代表 v14 的 0.971 F1 與當時的 cache（包含 Whisper 轉譯特定結果）綁定。Whisper（即使 tiny.en）在 batch 邊界、beam search 隨機性下，每次重抽會給出微妙不同的 `no_speech_prob` / `word_rate` / `avg_logprob`，speech rescue 在邊界例子上跨閾值翻覆。
+
+**這是與 AR 無關的 reproducibility issue**。下一步若要根治：
+1. 凍結 `features_cache/` 進 git（即使大）以鎖定 baseline。
+2. 或：把 speech_rescue 的硬閾值改為 soft scoring，降低單一特徵抖動的全域影響。
+
+---
+
+## 最終總結（v1 → v15）
+
+AR 特徵在當前 cache 下淨增 +0.029 F1@0.5，並把 test_005 推到滿分。v14 → v15 在不同 cache 上不可直接比較；同 cache ablation 才是公允對照（見上表）。
+
+| 指標 | 基線 | v9 | v11 | v13 | v14 | **v15 (AR off)** | **v15 (AR on)** |
+|---|---|---|---|---|---|---|---|
+| F1@0.5 | 0.22 | 0.668 | 0.727 | 0.905 | 0.971 | 0.731 | **0.760** |
