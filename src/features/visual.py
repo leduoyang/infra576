@@ -91,7 +91,7 @@ def compute_global_visual_profile(frames_with_ts: List[dict]) -> dict:
     diffs = []
     for i in range(1, len(frames_with_ts)):
         diffs.append(compute_frame_diff(frames_with_ts[i-1]["frame"], frames_with_ts[i]["frame"]))
-    avg_motion = float(np.mean(diffs))
+    avg_motion = float(np.median(diffs))
     
     # 2. Avg Color Variance (sampled every 10th frame for speed if many)
     sampled_frames = frames_with_ts[::max(1, len(frames_with_ts)//20)] # Sample ~20 frames
@@ -99,7 +99,7 @@ def compute_global_visual_profile(frames_with_ts: List[dict]) -> dict:
     for f in sampled_frames:
         hist = cv2.calcHist([f["frame"]], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
         hists.append(hist.flatten())
-    avg_color_variance = float(np.mean(np.var(np.array(hists), axis=0))) if hists else 0.0
+    avg_color_variance = float(np.median(np.var(np.array(hists), axis=0))) if hists else 0.0
     
     return {
         "avg_motion": avg_motion,

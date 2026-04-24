@@ -51,8 +51,8 @@ def compute_global_audio_profile(y: np.ndarray, sr: int) -> dict:
     onset_times = librosa.frames_to_time(frames, sr=sr).tolist()
 
     return {
-        "avg_centroid": float(np.mean(centroid)),
-        "avg_bandwidth": float(np.mean(bandwidth)),
+        "avg_centroid": float(np.median(centroid)),
+        "avg_bandwidth": float(np.median(bandwidth)),
         "onset_times": onset_times,
         "onset_strengths": kept_strengths.tolist(),
     }
