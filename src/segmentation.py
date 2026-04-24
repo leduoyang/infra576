@@ -3,18 +3,21 @@ import subprocess
 import json
 import numpy as np
 from src.features.visual import (
-    detect_scenes_scenedetect, 
-    analyze_motion_for_segment, 
+    detect_scenes_scenedetect,
+    analyze_motion_for_segment,
     analyze_color_variance,
-    compute_global_visual_profile
+    analyze_aspect_ratio_for_segment,
+    compute_global_visual_profile,
 )
 from src.features.audio import analyze_audio_features, compute_global_audio_profile
+from src.features.speech import transcribe, speech_features_for_segment
 from src.ingest import extract_audio, extract_frames
 
 def run_segmentation_pipeline(
     video_path: str,
     metadata: dict,
-    scene_threshold: float = 15.0
+    scene_threshold: float = 15.0,
+    transcript_cache: str = None,
 ) -> tuple[list[dict], dict]:
     """
     ORCHESTRATOR: Executes the full segmentation workflow.
@@ -28,6 +31,9 @@ def run_segmentation_pipeline(
     audio_path = "tmp_audio.wav"
     extract_audio(video_path, audio_path)
     y, sr = librosa.load(audio_path, sr=16000)
+
+    # 1b. Speech transcription (Whisper, cached per video)
+    transcript = transcribe(audio_path, transcript_cache)
     
     # Extract frames for visual features
     frames = extract_frames(video_path, sample_fps=2.0)
@@ -54,10 +60,14 @@ def run_segmentation_pipeline(
         audio_feats = analyze_audio_features(y, sr, start, end, audio_offset)
         scene.update(audio_feats)
         
-        # Visual features (Motion and Color)
+        # Visual features (Motion, Color, Active aspect ratio)
         scene["motion_score"] = analyze_motion_for_segment(frames, start, end)
         scene["color_variance"] = analyze_color_variance(frames, start, end)
-        
+        scene["aspect_ratio"] = analyze_aspect_ratio_for_segment(frames, start, end)
+
+        # Speech features (Whisper)
+        scene.update(speech_features_for_segment(transcript, start, end))
+
     return scenes, global_profile
 
 def merge_short_scenes(scenes: list[dict], min_duration: float = 2.0) -> list[dict]:

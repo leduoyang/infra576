@@ -399,5 +399,23 @@ function toast(msg, ms = 2800) {
   setTimeout(() => el.remove(), ms);
 }
 
+// ─── Preset Loader ───────────────────────────────────────────────────────────
+const presetSelect = document.getElementById('preset-select');
+if (presetSelect) {
+  presetSelect.addEventListener('change', async () => {
+    const name = presetSelect.value;
+    if (!name) return;
+    try {
+      const resp = await fetch(`../predictions/${name}.json`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const meta = await resp.json();
+      loadMetadata(meta);
+      toast(`Preset loaded: ${name}. Now pick the matching video.`);
+    } catch (err) {
+      toast(`❌ Load preset failed: ${err.message}`);
+    }
+  });
+}
+
 // Init
 toast('Load a video and JSON to begin ✨');

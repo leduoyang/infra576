@@ -103,6 +103,16 @@ html, body {
 .file-btn:hover { background: var(--accent-light); transform: translateY(-1px); }
 .file-btn.secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); }
 .file-btn.secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
+select.file-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3e%3cpath d='M1 1l4 4 4-4'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px 6px;
+}
+select.file-btn option { background: var(--bg-card); color: var(--text-primary); }
 
 #main-content {
   flex: 1 1 0;

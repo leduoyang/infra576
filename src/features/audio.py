@@ -29,15 +29,31 @@ def analyze_audio_features(y: np.ndarray, sr: int, start_sec: float, end_sec: fl
 def compute_global_audio_profile(y: np.ndarray, sr: int) -> dict:
     """
     Computes the 'Universal Audio Profile' for the entire video.
+    Also returns strong onset times (seconds) for boundary snapping.
     """
     if len(y) < 2048:
-        return {"avg_centroid": 0.0, "avg_bandwidth": 0.0}
-        
+        return {"avg_centroid": 0.0, "avg_bandwidth": 0.0, "onset_times": []}
+
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
     bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)
-    
+
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    all_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr)
+    strengths = onset_env[all_frames]
+    if len(strengths) > 0:
+        cutoff = float(np.percentile(strengths, 80))
+        keep = strengths >= cutoff
+        frames = all_frames[keep]
+        kept_strengths = strengths[keep]
+    else:
+        frames = all_frames
+        kept_strengths = strengths
+    onset_times = librosa.frames_to_time(frames, sr=sr).tolist()
+
     return {
         "avg_centroid": float(np.mean(centroid)),
         "avg_bandwidth": float(np.mean(bandwidth)),
+        "onset_times": onset_times,
+        "onset_strengths": kept_strengths.tolist(),
     }
 
