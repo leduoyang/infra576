@@ -18,3 +18,9 @@ ENV/
 *_segments.json
 tests/e2e_videos/
 tmp/
+._*
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.wav

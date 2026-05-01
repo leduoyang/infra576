@@ -1,0 +1,120 @@
+{
+  "video_filename": "test_001.mp4",
+  "original_video_duration_seconds": 1438.982,
+  "original_video_duration_formatted": "00:23:58.982",
+  "original_video_resolution": "640x360",
+  "output_filename": "test_001.mp4",
+  "output_duration_seconds": 1458.603,
+  "output_duration_formatted": "00:24:18.603",
+  "total_ads_duration_seconds": 19.621,
+  "num_ads_inserted": 2,
+  "content_duration_seconds": 1438.982,
+  "total_noncontent_duration_seconds": 19.621,
+  "num_segments": 3,
+  "non_content_summary": {
+    "intro": {
+      "count": 1,
+      "total_duration_seconds": 14.554
+    },
+    "outro": {
+      "count": 1,
+      "total_duration_seconds": 5.067
+    }
+  },
+  "inserted_ads": [
+    {
+      "ad_index": 1,
+      "ad_filename": "detected_intro_001.mp4",
+      "ad_duration_seconds": 14.554,
+      "ad_type": "intro",
+      "original_video_insert_at_seconds": 0.0,
+      "original_video_insert_at_formatted": "00:00:00.000",
+      "final_video_ad_start_seconds": 0.0,
+      "final_video_ad_start_formatted": "00:00:00.000",
+      "final_video_ad_end_seconds": 14.554,
+      "final_video_ad_end_formatted": "00:00:14.554"
+    },
+    {
+      "ad_index": 2,
+      "ad_filename": "detected_outro_002.mp4",
+      "ad_duration_seconds": 5.067,
+      "ad_type": "outro",
+      "original_video_insert_at_seconds": 1438.804,
+      "original_video_insert_at_formatted": "00:23:58.804",
+      "final_video_ad_start_seconds": 1453.359,
+      "final_video_ad_start_formatted": "00:24:13.359",
+      "final_video_ad_end_seconds": 1458.425,
+      "final_video_ad_end_formatted": "00:24:18.425"
+    }
+  ],
+  "timeline_segments": [
+    {
+      "type": "intro",
+      "ad_index": 1,
+      "ad_filename": "detected_intro_001.mp4",
+      "segment_label": "intro",
+      "is_content": false,
+      "confidence": 0.728,
+      "final_video_start_seconds": 0.0,
+      "final_video_start_formatted": "00:00:00.000",
+      "final_video_end_seconds": 14.554,
+      "final_video_end_formatted": "00:00:14.554",
+      "duration_seconds": 14.554,
+      "skip_suggestion": true,
+      "skip_reason": "Opening sequence"
+    },
+    {
+      "type": "video_content",
+      "segment_index": 0,
+      "original_video_start_seconds": 0.0,
+      "original_video_end_seconds": 1438.804,
+      "segment_label": "content",
+      "is_content": true,
+      "confidence": 0.65,
+      "final_video_start_seconds": 14.554,
+      "final_video_start_formatted": "00:00:14.554",
+      "final_video_end_seconds": 1453.359,
+      "final_video_end_formatted": "00:24:13.359",
+      "duration_seconds": 1438.804,
+      "skip_suggestion": false
+    },
+    {
+      "type": "outro",
+      "ad_index": 2,
+      "ad_filename": "detected_outro_002.mp4",
+      "segment_label": "outro",
+      "is_content": false,
+      "confidence": 0.748,
+      "final_video_start_seconds": 1453.359,
+      "final_video_start_formatted": "00:24:13.359",
+      "final_video_end_seconds": 1458.425,
+      "final_video_end_formatted": "00:24:18.425",
+      "duration_seconds": 5.067,
+      "skip_suggestion": true,
+      "skip_reason": "Closing / end card"
+    }
+  ],
+  "chapters": [
+    {
+      "title": "Intro",
+      "start_seconds": 0.0,
+      "start_formatted": "00:00:00.000",
+      "is_content": false,
+      "segment_label": "intro"
+    },
+    {
+      "title": "Content part 1",
+      "start_seconds": 14.554,
+      "start_formatted": "00:00:14.554",
+      "is_content": true,
+      "segment_label": "content"
+    },
+    {
+      "title": "Outro",
+      "start_seconds": 1453.359,
+      "start_formatted": "00:24:13.359",
+      "is_content": false,
+      "segment_label": "outro"
+    }
+  ]
+}

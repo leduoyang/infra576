@@ -1,0 +1,82 @@
+{
+  "video_filename": "test_003.mp4",
+  "original_video_duration_seconds": 1823.666,
+  "original_video_duration_formatted": "00:30:23.666",
+  "original_video_resolution": "640x360",
+  "output_filename": "test_003.mp4",
+  "output_duration_seconds": 1826.657,
+  "output_duration_formatted": "00:30:26.657",
+  "total_ads_duration_seconds": 2.991,
+  "num_ads_inserted": 1,
+  "content_duration_seconds": 1823.666,
+  "total_noncontent_duration_seconds": 2.991,
+  "num_segments": 2,
+  "non_content_summary": {
+    "outro": {
+      "count": 1,
+      "total_duration_seconds": 2.991
+    }
+  },
+  "inserted_ads": [
+    {
+      "ad_index": 1,
+      "ad_filename": "detected_outro_001.mp4",
+      "ad_duration_seconds": 2.991,
+      "ad_type": "outro",
+      "original_video_insert_at_seconds": 1823.514,
+      "original_video_insert_at_formatted": "00:30:23.514",
+      "final_video_ad_start_seconds": 1823.514,
+      "final_video_ad_start_formatted": "00:30:23.514",
+      "final_video_ad_end_seconds": 1826.506,
+      "final_video_ad_end_formatted": "00:30:26.506"
+    }
+  ],
+  "timeline_segments": [
+    {
+      "type": "video_content",
+      "segment_index": 0,
+      "original_video_start_seconds": 0.0,
+      "original_video_end_seconds": 1823.514,
+      "segment_label": "content",
+      "is_content": true,
+      "confidence": 0.65,
+      "final_video_start_seconds": 0.0,
+      "final_video_start_formatted": "00:00:00.000",
+      "final_video_end_seconds": 1823.514,
+      "final_video_end_formatted": "00:30:23.514",
+      "duration_seconds": 1823.514,
+      "skip_suggestion": false
+    },
+    {
+      "type": "outro",
+      "ad_index": 1,
+      "ad_filename": "detected_outro_001.mp4",
+      "segment_label": "outro",
+      "is_content": false,
+      "confidence": 0.745,
+      "final_video_start_seconds": 1823.514,
+      "final_video_start_formatted": "00:30:23.514",
+      "final_video_end_seconds": 1826.506,
+      "final_video_end_formatted": "00:30:26.506",
+      "duration_seconds": 2.991,
+      "skip_suggestion": true,
+      "skip_reason": "Closing / end card"
+    }
+  ],
+  "chapters": [
+    {
+      "title": "Content part 1",
+      "start_seconds": 0.0,
+      "start_formatted": "00:00:00.000",
+      "is_content": true,
+      "segment_label": "content"
+    },
+    {
+      "title": "Outro",
+      "start_seconds": 1823.514,
+      "start_formatted": "00:30:23.514",
+      "is_content": false,
+      "segment_label": "outro"
+    }
+  ]
+}

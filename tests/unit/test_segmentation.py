@@ -110,15 +110,17 @@ def test_run_segmentation_pipeline_return_type(tmp_path):
          mock.patch('src.segmentation.librosa.load') as m_load, \
          mock.patch('src.segmentation.compute_global_visual_profile') as m_gv, \
          mock.patch('src.segmentation.compute_global_audio_profile') as m_ga, \
+         mock.patch('src.segmentation.compute_global_transcript_profile') as m_gt, \
          mock.patch('src.segmentation.detect_scenes_scenedetect') as m_ds:
-        
+
         m_load.return_value = (np.zeros(16000), 16000)
         m_frames.return_value = []
         m_gv.return_value = {"avg_motion": 0.0}
         m_ga.return_value = {"avg_centroid": 0.0}
+        m_gt.return_value = {"has_transcript": False, "total_word_count": 0, "avg_words_per_second": 0.0}
         m_ds.return_value = [{"start_seconds": 0.0, "end_seconds": 1.0, "duration_seconds": 1.0}]
-        
-        segments, profile = run_segmentation_pipeline("fake.mp4", {"audio_start_time": 0.0})
+
+        segments, profile = run_segmentation_pipeline("fake.mp4", {"audio_start_time": 0.0, "duration_seconds": 1.0})
         
         assert isinstance(segments, list)
         assert isinstance(profile, dict)

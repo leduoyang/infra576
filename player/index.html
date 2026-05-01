@@ -16,19 +16,25 @@
     <header id="app-header">
       <div class="header-inner">
         <div class="logo">
-          <span class="logo-icon">⬡</span>
+          <span class="logo-icon">&#x2B21;</span>
           <span class="logo-text">SegmentPlayer</span>
           <span class="logo-badge">Multimodal AI</span>
         </div>
         <div class="header-actions">
-          <label class="file-btn" id="load-video-label" for="load-video">
-            <span>📹</span> Load Video
+          <label class="file-btn" for="load-video">
+            <span>&#x1F4F9;</span> Load Video
           </label>
           <input type="file" id="load-video" accept="video/*" hidden />
-          <label class="file-btn secondary" id="load-json-label" for="load-json">
-            <span>📋</span> Load JSON
+          <label class="file-btn secondary" for="load-json">
+            <span>&#x1F4CB;</span> Load JSON
           </label>
           <input type="file" id="load-json" accept=".json" hidden />
+          <button id="btn-review-toggle" class="file-btn secondary" title="Toggle review / edit mode">
+            &#x270F; Review
+          </button>
+          <button id="btn-export-json" class="file-btn secondary" title="Export corrected JSON" style="display:none;">
+            &#x1F4BE; Export
+          </button>
         </div>
       </div>
     </header>
@@ -37,13 +43,11 @@
     <main id="main-content">
       <!-- Left: Video + Controls -->
       <section id="player-section">
-        <!-- Video element -->
         <div id="video-wrapper">
           <video id="video-el" preload="metadata"></video>
           <div id="video-overlay" class="hidden">
             <div class="overlay-text">Load a video to begin</div>
           </div>
-          <!-- Current segment badge -->
           <div id="segment-badge" class="hidden">
             <span id="segment-badge-label"></span>
           </div>
@@ -55,19 +59,18 @@
             <div id="progress-bar-bg">
               <div id="progress-fill"></div>
               <div id="progress-thumb"></div>
-              <!-- Segment color overlays -->
               <div id="segment-overlays"></div>
             </div>
           </div>
           <div id="control-row">
             <div class="ctrl-left">
-              <button id="btn-play" class="ctrl-btn" title="Play/Pause">▶</button>
-              <button id="btn-prev-seg" class="ctrl-btn" title="Previous Segment">⏮</button>
-              <button id="btn-next-seg" class="ctrl-btn" title="Next Segment">⏭</button>
+              <button id="btn-play" class="ctrl-btn" title="Play/Pause (Space)">&#x25B6;</button>
+              <button id="btn-prev-seg" class="ctrl-btn" title="Previous Segment (P)">&#x23EE;</button>
+              <button id="btn-next-seg" class="ctrl-btn" title="Next Segment (N)">&#x23ED;</button>
               <span id="time-display">00:00:00 / 00:00:00</span>
             </div>
             <div class="ctrl-right">
-              <button id="btn-mute" class="ctrl-btn" title="Mute">🔊</button>
+              <button id="btn-mute" class="ctrl-btn" title="Mute">&#x1F50A;</button>
               <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" />
             </div>
           </div>
@@ -76,15 +79,21 @@
         <!-- Mode buttons -->
         <div id="mode-buttons">
           <button id="btn-play-content" class="mode-btn content-btn">
-            ▶ Play Content Only
+            &#x25B6; Play Content Only
           </button>
           <button id="btn-skip-noncontent" class="mode-btn noncontent-btn">
-            ▶ Play Non-Content Only
+            &#x25B6; Play Non-Content Only
           </button>
-
           <button id="btn-normal-mode" class="mode-btn normal-btn active">
-            ◼ Normal Mode
+            &#x25FC; Normal Mode
           </button>
+        </div>
+
+        <!-- Content Map (percentage breakdown) -->
+        <div id="content-map-wrapper" class="hidden">
+          <div id="content-map-label">Content map</div>
+          <div id="content-map-bar"></div>
+          <div id="content-map-stats"></div>
         </div>
       </section>
 
@@ -105,9 +114,16 @@
             <span id="stat-segments" class="stat-value">-</span>
           </div>
         </div>
+
+        <!-- Chapter navigation -->
+        <div id="chapter-nav" class="hidden">
+          <div class="chapter-label">Chapters</div>
+          <div id="chapter-list"></div>
+        </div>
+
         <div id="segment-list"></div>
         <div id="empty-panel">
-          <div class="empty-icon">📊</div>
+          <div class="empty-icon">&#x1F4CA;</div>
           <p>Load a video and JSON metadata<br />to see segments</p>
         </div>
       </aside>
@@ -118,20 +134,31 @@
       <div id="timeline-label">Timeline</div>
       <div id="timeline-bar" title="Click to seek"></div>
       <div id="timeline-legend">
-        <span class="legend-item content-item">■ Content</span>
-        <span class="legend-item intro-item">■ Intro</span>
-        <span class="legend-item outro-item">■ Outro</span>
-        <span class="legend-item ad-item">■ Ad / Sponsor</span>
-        <span class="legend-item transition-item">■ Transition</span>
-        <span class="legend-item recap-item">■ Recap</span>
-        <span class="legend-item deadair-item">■ Dead Air</span>
+        <span class="legend-item content-item">&#x25A0; Content</span>
+        <span class="legend-item intro-item">&#x25A0; Intro</span>
+        <span class="legend-item outro-item">&#x25A0; Outro</span>
+        <span class="legend-item ad-item">&#x25A0; Ad / Sponsor</span>
+        <span class="legend-item transition-item">&#x25A0; Transition</span>
+        <span class="legend-item recap-item">&#x25A0; Recap</span>
+        <span class="legend-item deadair-item">&#x25A0; Dead Air</span>
       </div>
     </div>
   </div>
 
-  <!-- Toast notifications -->
-  <div id="toast-container"></div>
+  <!-- Review mode type selector (hidden modal) -->
+  <div id="review-modal" class="review-modal hidden">
+    <div class="review-modal-inner">
+      <div class="review-modal-title">Reclassify segment</div>
+      <div id="review-modal-info"></div>
+      <div id="review-type-options"></div>
+      <div class="review-modal-actions">
+        <button id="review-cancel" class="file-btn secondary">Cancel</button>
+        <button id="review-apply" class="file-btn">Apply</button>
+      </div>
+    </div>
+  </div>
 
+  <div id="toast-container"></div>
   <script src="player.js"></script>
 </body>
 </html>
