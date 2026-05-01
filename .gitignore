@@ -18,3 +18,15 @@ ENV/
 *_segments.json
 tests/e2e_videos/
 tmp/
+work/
+
+# Source data — videos and ground-truth labels stay out of git
+videos_with_ads/
+video_info/
+
+# Editor / IDE
+.claude/
+
+# Secrets — keep keys out of the repo
+.env
+**/.env
