@@ -24,6 +24,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -141,8 +142,8 @@ def merge_consecutive(classified: list[dict]) -> list[dict]:
 def run_merge(
     video_path: str,
     labels_path: str,
-    index_path: str | None = None,
-    output_path: str | None = None,
+    index_path: Optional[str] = None,
+    output_path: Optional[str] = None,
     quiet: bool = False,
 ) -> dict:
     """Programmatic entry point.  Returns dict with ad_runs, output_path, and player payload."""

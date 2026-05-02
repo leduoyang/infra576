@@ -28,15 +28,22 @@ fi
 VIDEO="$1"
 shift
 
-# Prefer the conda env we installed deps into; fall back to system python3.
+# Prefer the project virtualenv, then any configured Python, then system python3.
 PY="${PYTHON:-}"
 if [ -z "$PY" ]; then
-    if [ -x /opt/anaconda3/bin/python ]; then
+    if [ -x .venv/bin/python ]; then
+        PY=.venv/bin/python
+    elif [ -x /opt/anaconda3/bin/python ]; then
         PY=/opt/anaconda3/bin/python
     else
         PY=python3
     fi
 fi
+
+# Some native ML dependencies used by the transcript stage leave a semaphore
+# registered at interpreter shutdown on macOS/Python 3.9. The pipeline output is
+# already written by then, so keep the warning from being mistaken for a failure.
+export PYTHONWARNINGS="${PYTHONWARNINGS:+$PYTHONWARNINGS,}ignore:resource_tracker:UserWarning"
 
 fmt_dur() {
     local s=$1
