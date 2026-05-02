@@ -63,7 +63,7 @@ def _load_dotenv() -> None:
 
 
 def call_openai(
-    prompt_text: str,
+    prompt_content,
     model: str = DEFAULT_MODEL,
     api_key: Optional[str] = None,
     temperature: float = DEFAULT_TEMPERATURE,
@@ -94,7 +94,7 @@ def call_openai(
     # `max_tokens`; fall back gracefully.
     kwargs = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt_text}],
+        "messages": [{"role": "user", "content": prompt_content}],
     }
     try:
         kwargs_full = {**kwargs, "temperature": temperature, "max_tokens": max_tokens}
@@ -155,17 +155,62 @@ def main(
 
     prompt_text = prompt_path.read_text()
 
+    parts = prompt_text.split("================================================================================\nTRANSCRIPT\n================================================================================")
+    if len(parts) == 2:
+        preamble = parts[0] + "================================================================================\nTRANSCRIPT\n================================================================================\n\n"
+        
+        print("Extracting screenshots for multimodal prompt...")
+        import cv2
+        import base64
+        import numpy as np
+        import tqdm
+        
+        index_path = P.sentence_index(stem)
+        index_data = json.loads(index_path.read_text())
+        
+        prompt_content = [{"type": "text", "text": preamble}]
+        
+        cap = cv2.VideoCapture(video_path)
+        sentences = index_data["sentences"]
+        
+        for s in tqdm.tqdm(sentences, desc="Screenshots"):
+            ts = s["start"]
+            cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
+            ret, frame = cap.read()
+            if not ret:
+                frame = np.zeros((288, 512, 3), dtype=np.uint8)
+                
+            frame = cv2.resize(frame, (512, 288))
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            b64 = base64.b64encode(buffer).decode('utf-8')
+            
+            if s["kind"] == "speech":
+                txt = f'S{s["i"]}: "{s["text"]}"\n'
+            else:
+                ev = ", ".join(s["events"]) if s["events"] else "—"
+                txt = f'S{s["i"]}: [non-speech: {ev}, {s["end"] - s["start"]:.1f}s]\n'
+                
+            prompt_content.append({"type": "text", "text": f"Screenshot at {ts:.1f}s for S{s['i']}:"})
+            prompt_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "low"}})
+            prompt_content.append({"type": "text", "text": txt})
+            
+        cap.release()
+    else:
+        prompt_content = prompt_text
+
     print("=== llm_classify ===")
     print(f"prompt:      {prompt_path} ({prompt_path.stat().st_size / 1024:.1f} KB)")
     print(f"model:       {model}")
     print(f"temperature: {temperature}")
     print(f"max_tokens:  {max_tokens}")
+    if isinstance(prompt_content, list):
+        print(f"images:      {len(index_data['sentences'])} (low detail)")
     print()
     print("calling OpenAI API ...")
 
     try:
         result = call_openai(
-            prompt_text,
+            prompt_content,
             model=model,
             api_key=api_key,
             temperature=temperature,

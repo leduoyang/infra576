@@ -41,6 +41,12 @@ You will read a flowing transcript of a long-form video and identify which
 numbered sentences are part of an advertisement (commercial ad, sponsorship,
 brand insert, or product placement).
 
+I am also providing a low-resolution screenshot taken at the start of each
+sentence block. Use the visual cues in these screenshots (e.g., changes in aspect 
+ratio like disappearing cinematic black bars, heavy text/graphics overlays, logos, 
+or sudden scene changes) alongside the audio/text to determine if it is an ad. 
+Pay special attention to letterboxing/aspect ratio shifts!
+
 The transcript was machine-generated.  Speech sentences are transcribed by
 Whisper (minor errors are OK — classify by meaning, not exact wording, e.g.
 "the new containing out Doritos" is a Doritos brand mention).  Non-speech
