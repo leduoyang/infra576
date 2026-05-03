@@ -50,15 +50,8 @@ const btnNormal    = document.getElementById('btn-normal-mode');
 
 // ─── Segment type → CSS class mapping ───────────────────────────────────────
 function segClass(type) {
-  const map = {
-    video_content: 'content',
-    content:       'content',
-    intro:         'intro',
-    outro:         'outro',
-    ad:            'ad',
-    non_content:   'ad',
-  };
-  return map[type] || 'ad';
+  if (type === 'video_content' || type === 'content') return 'content';
+  return 'ad';
 }
 
 
@@ -227,16 +220,9 @@ function renderProgressOverlays() {
 function getColorForClass(cls) {
   const map = {
     content:       '#22c55e',
-    intro:         '#f59e0b',
-    outro:         '#a78bfa',
     ad:            '#ef4444',
-    recap:         '#38bdf8',
-    transition:    '#64748b',
-    dead_air:      '#1e293b',
-    holding_screen:'#374151',
-    self_promotion:'#f97316',
   };
-  return map[cls] || '#6b7280';
+  return map[cls] || '#ef4444';
 }
 
 // ─── Seeking ─────────────────────────────────────────────────────────────────

@@ -13,15 +13,7 @@
 
   /* Segment type colors */
   --c-content:     #22c55e;
-  --c-intro:       #f59e0b;
-  --c-outro:       #a78bfa;
   --c-ad:          #ef4444;
-  --c-recap:       #38bdf8;
-  --c-transition:  #64748b;
-  --c-dead-air:    #1e293b;
-  --c-holding:     #374151;
-  --c-promo:       #f97316;
-  --c-unknown:     #6b7280;
 
   --text-primary:  #f1f5f9;
   --text-secondary:#94a3b8;
@@ -371,14 +363,7 @@ html, body {
   border-radius: 3px 0 0 3px;
 }
 .seg-card.is-content::before { background: var(--c-content); }
-.seg-card.is-intro::before   { background: var(--c-intro); }
-.seg-card.is-outro::before   { background: var(--c-outro); }
 .seg-card.is-ad::before      { background: var(--c-ad); }
-.seg-card.is-recap::before   { background: var(--c-recap); }
-.seg-card.is-transition::before { background: var(--c-transition); }
-.seg-card.is-dead_air::before    { background: var(--c-dead-air); }
-.seg-card.is-holding_screen::before { background: var(--c-holding); }
-.seg-card.is-self_promotion::before { background: var(--c-promo); }
 
 .seg-card { background: var(--bg-card); }
 .seg-card:hover { background: var(--bg-hover); border-color: var(--border); transform: translateX(2px); }
@@ -398,14 +383,7 @@ html, body {
   border-radius: 10px;
 }
 .badge-content    { background: rgba(34,197,94,0.15); color: var(--c-content); }
-.badge-intro      { background: rgba(245,158,11,0.15); color: var(--c-intro); }
-.badge-outro      { background: rgba(167,139,250,0.15); color: var(--c-outro); }
 .badge-ad         { background: rgba(239,68,68,0.15); color: var(--c-ad); }
-.badge-recap      { background: rgba(56,189,248,0.15); color: var(--c-recap); }
-.badge-transition { background: rgba(100,116,139,0.15); color: var(--c-transition); }
-.badge-dead_air   { background: rgba(30,41,59,0.5); color: var(--text-muted); }
-.badge-holding_screen { background: rgba(55,65,81,0.3); color: var(--text-muted); }
-.badge-self_promotion { background: rgba(249,115,22,0.15); color: var(--c-promo); }
 
 .seg-skip-btn {
   background: transparent;
@@ -461,15 +439,7 @@ html, body {
 }
 .timeline-seg:hover { filter: brightness(1.3); }
 .timeline-seg.tl-content     { background: var(--c-content); }
-.timeline-seg.tl-intro        { background: var(--c-intro); }
-.timeline-seg.tl-outro        { background: var(--c-outro); }
 .timeline-seg.tl-ad           { background: var(--c-ad); }
-.timeline-seg.tl-recap        { background: var(--c-recap); }
-.timeline-seg.tl-transition   { background: var(--c-transition); }
-.timeline-seg.tl-dead_air     { background: var(--c-dead-air); border-right: 1px solid var(--border); }
-.timeline-seg.tl-holding_screen { background: var(--c-holding); }
-.timeline-seg.tl-self_promotion { background: var(--c-promo); }
-.timeline-seg.tl-unknown      { background: var(--c-unknown); }
 
 #timeline-legend {
   display: flex; gap: 14px; flex-wrap: wrap;
@@ -481,12 +451,7 @@ html, body {
   display: flex; align-items: center; gap: 4px;
 }
 .content-item    { color: var(--c-content); }
-.intro-item      { color: var(--c-intro); }
-.outro-item      { color: var(--c-outro); }
 .ad-item         { color: var(--c-ad); }
-.transition-item { color: var(--c-transition); }
-.recap-item      { color: var(--c-recap); }
-.deadair-item    { color: var(--text-muted); }
 
 /* ── Toasts ───────────────────────────────────────────── */
 #toast-container {
