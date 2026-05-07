@@ -17,7 +17,7 @@ const state = {
   segments: [],        // parsed timeline_segments from JSON
   duration: 0,
   meta: null,          // full JSON metadata
-  mode: 'normal',      // 'normal' | 'content-only' | 'skip-noncontent'
+  mode: 'normal',      // 'normal' | 'content-only' | 'intro-outro-only' | 'ads-only'
   activeSegIdx: -1,
   dragging: false,
 };
@@ -45,19 +45,21 @@ const btnNext      = document.getElementById('btn-next-seg');
 const btnMute      = document.getElementById('btn-mute');
 const volSlider    = document.getElementById('volume-slider');
 const btnContent   = document.getElementById('btn-play-content');
+const btnIntroOutro= document.getElementById('btn-play-intro-outro');
 const btnSkipNc    = document.getElementById('btn-skip-noncontent');
 const btnNormal    = document.getElementById('btn-normal-mode');
 
 // ─── Segment type → CSS class mapping ───────────────────────────────────────
 function segClass(type) {
   if (type === 'video_content' || type === 'content') return 'content';
+  if (type === 'intro' || type === 'outro') return 'intro_outro';
   return 'ad';
 }
 
-
-function isNonContent(seg) {
-  return seg.type === 'non_content' || seg.type !== 'video_content';
-}
+function isContent(seg)    { return seg.type === 'video_content' || seg.type === 'content'; }
+function isIntroOutro(seg) { return seg.type === 'intro' || seg.type === 'outro'; }
+function isAd(seg)         { return !isContent(seg) && !isIntroOutro(seg); }
+function isNonContent(seg) { return !isContent(seg); }  // legacy: ads + intro + outro
 
 function formatTime(sec) {
   sec = Math.max(0, sec);
@@ -220,6 +222,7 @@ function renderProgressOverlays() {
 function getColorForClass(cls) {
   const map = {
     content:       '#22c55e',
+    intro_outro:   '#3b82f6',
     ad:            '#ef4444',
   };
   return map[cls] || '#ef4444';
@@ -275,17 +278,13 @@ video.addEventListener('timeupdate', () => {
   }
 
   // Mode logic
-  if (state.mode === 'content-only') {
-    const seg = state.segments[idx];
-    if (seg && isNonContent(seg)) {
-      // Skip to end of this segment
-      const endTime = seg.final_video_end_seconds || t;
-      video.currentTime = endTime;
-    }
-  } else if (state.mode === 'noncontent-only') {
-    const seg = state.segments[idx];
-    if (seg && !isNonContent(seg)) {
-      // Skip to end of this segment
+  const seg = state.segments[idx];
+  if (seg) {
+    let shouldSkip = false;
+    if      (state.mode === 'content-only')     shouldSkip = !isContent(seg);
+    else if (state.mode === 'ads-only')         shouldSkip = !isAd(seg);
+    else if (state.mode === 'intro-outro-only') shouldSkip = !isIntroOutro(seg);
+    if (shouldSkip) {
       const endTime = seg.final_video_end_seconds || t;
       video.currentTime = endTime;
     }
@@ -329,40 +328,33 @@ progressBg.addEventListener('click', e => {
 // ─── Mode Buttons ────────────────────────────────────────────────────────────
 function setMode(m) {
   state.mode = m;
-  btnContent.classList.toggle('active', m === 'content-only');
-  btnSkipNc.classList.toggle('active', m === 'noncontent-only');
-  btnNormal.classList.toggle('active', m === 'normal');
+  btnContent.classList.toggle('active',    m === 'content-only');
+  btnIntroOutro.classList.toggle('active', m === 'intro-outro-only');
+  btnSkipNc.classList.toggle('active',     m === 'ads-only');
+  btnNormal.classList.toggle('active',     m === 'normal');
   const labels = {
-    'normal': 'Normal',
-    'content-only': 'Content Only',
-    'noncontent-only': 'Non-Content Only'
+    'normal':           'Normal',
+    'content-only':     'Content Only',
+    'intro-outro-only': 'Intro / Outro Only',
+    'ads-only':         'Ads Only',
   };
   toast(`Mode: ${labels[m]}`);
 }
 
-
-btnContent.addEventListener('click', () => {
-  setMode(state.mode === 'content-only' ? 'normal' : 'content-only');
-  if (state.mode === 'content-only') {
-    // Jump to first content segment
-    const first = state.segments.findIndex(s => !isNonContent(s));
+function toggleMode(target, predicate) {
+  const next = state.mode === target ? 'normal' : target;
+  setMode(next);
+  if (state.mode === target) {
+    const first = state.segments.findIndex(predicate);
     if (first >= 0) seekToSegment(first);
     video.play();
   }
-});
+}
 
-btnSkipNc.addEventListener('click', () => {
-  setMode(state.mode === 'noncontent-only' ? 'normal' : 'noncontent-only');
-  if (state.mode === 'noncontent-only') {
-    // Jump to first ad segment
-    const first = state.segments.findIndex(s => isNonContent(s));
-    if (first >= 0) seekToSegment(first);
-    video.play();
-  }
-});
-
-
-btnNormal.addEventListener('click', () => setMode('normal'));
+btnContent.addEventListener('click',    () => toggleMode('content-only',     isContent));
+btnIntroOutro.addEventListener('click', () => toggleMode('intro-outro-only', isIntroOutro));
+btnSkipNc.addEventListener('click',     () => toggleMode('ads-only',         isAd));
+btnNormal.addEventListener('click',     () => setMode('normal'));
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {

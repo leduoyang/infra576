@@ -69,11 +69,30 @@ Step 2 — Trace the narrative thread.
 Step 3 — Classify each region.
 
   For SPEECH sentences:
-    Default = content.  Mark as ad only if there's a clear commercial
-    signal — brand name in the text ("Doritos", "use code XYZ", "save
-    20% at..."), call-to-action ("sponsored by", "subscribe", "click the
-    link"), or characteristic ad copy.  Whisper may garble brand names;
-    classify by meaning.
+    Default = content.  Mark as ad only if the speech promotes an
+    EXTERNAL brand, product, or service.  Strong signals:
+      - Third-party brand name in the text ("Doritos", "MDH masala",
+        "Clash of Clans", "Squarespace", "use code XYZ", "save 20% at...").
+      - Sponsorship phrasing for an external product ("today's video is
+        brought to you by...", "this video is sponsored by...",
+        "click the link in the description to get...").
+      - Whisper may garble brand names; classify by meaning.
+
+    *** Host self-promotion is CONTENT, not ad. ***  YouTube videos
+    routinely end with the host saying "subscribe to my channel", "like
+    and subscribe", "hit the bell icon", "check out my YouTube channel",
+    "see you in the next video", or talking about their own past/future
+    videos.  These are part of the host's normal narrative — they are
+    NOT inserted advertisements.  The same applies to host intros
+    ("hey guys, welcome back to the channel"), recap mentions
+    ("as I covered last week"), and Patreon / merch / Discord pitches
+    for the host's own community.
+
+    Rule of thumb: if the speaker is the same person who's been
+    hosting / narrating the video and they're talking about their own
+    channel, content, or community → CONTENT.  If the speech is part
+    of a stylistically distinct insert (different speaker, different
+    music, different scene, third-party brand) → AD.
 
   For NON-SPEECH sentences (the [non-speech: ...] blocks):
     *** Default = ad. ***  A non-speech block is treated as ad UNLESS it
@@ -107,16 +126,50 @@ Step 3 — Classify each region.
   - which test ((a) speech anchor, (b) scene consistency, (c) topical
     continuity) it failed, OR which commercial signal it matched.
 
+  ── INTRO and OUTRO (additional category) ──
+  Many videos open with an intro and close with an outro.  These are NOT
+  ads (they're part of the host's normal narrative) but viewers often
+  want to skip them, so we mark them separately.
+
+  Look for INTRO sentences ONLY within the first 60 seconds of the
+  video.  Typical intro content:
+    - Opening title card or theme music.
+    - Greeting + topic statement ("hey guys, today we're going to
+      build...", "in this video we'll cover...").
+    - Channel-name reveal, stinger, or sponsor-block placeholder
+      that's part of the show's branding (not a third-party ad).
+
+  Look for OUTRO sentences ONLY within the last 60 seconds of the
+  video.  Typical outro content:
+    - Closing remarks ("thanks for watching", "see you next time").
+    - Host self-promo CTAs ("subscribe", "like and hit the bell",
+      "check out my Patreon / Discord / merch").
+    - End-card music or "more videos" overlay.
+
+  Rules:
+    - Only consider intro candidates in [0, 60] seconds.
+    - Only consider outro candidates in [duration-60, duration] seconds.
+    - A short video (< 90 s) may have no intro or outro at all.  Don't
+      force-fit; if nothing clearly stands out as intro/outro, leave
+      the list empty.
+    - If a sentence would qualify as BOTH ad and intro/outro, label it
+      as ad (don't double-count).
+    - Intro and outro should each be CONTIGUOUS — no gaps.
+
+  In your reasoning, briefly state which sentence range you picked
+  for the intro and which for the outro (or "none" if absent).
+
 Step 4 — Output.
   After your reasoning, output a JSON object on its own line at the very end
   of your reply.  No code fence, no markdown around it.  Format:
 
-    {"ad_sentences": [195, 196, 197, 199]}
+    {"ad_sentences": [195, 196, 197, 199], "intro_sentences": [1, 2, 3], "outro_sentences": [550, 551]}
 
-  - Each integer = sentence number (without the "S" prefix) belonging to
-    an ad.
-  - Sorted ascending, no duplicates.
-  - If no ads, output {"ad_sentences": []}.
+  - Each list is sentence numbers (without the "S" prefix) for that
+    category, sorted ascending, no duplicates.
+  - Categories must be disjoint.
+  - Use empty lists for any category that's absent: e.g.
+    {"ad_sentences": [], "intro_sentences": [], "outro_sentences": []}.
 
 Begin.
 

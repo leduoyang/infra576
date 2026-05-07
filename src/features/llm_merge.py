@@ -41,21 +41,26 @@ MERGE_GAP_S = 5.0
 OVERLAP_THRESHOLD = 0.5
 
 
-_AD_JSON_RE = re.compile(
-    r'\{\s*"ad_sentences"\s*:\s*\[(?P<ids>[^\]]*)\]\s*\}',
+_LIST_RE = re.compile(
+    r'"(?P<key>ad_sentences|intro_sentences|outro_sentences)"\s*:\s*\[(?P<ids>[^\]]*)\]',
     re.DOTALL,
 )
 
 
-def parse_ad_sentences(reply_text: str) -> list[int]:
+def _parse_id_list(ids_text: str) -> list[int]:
+    return sorted({int(x.strip()) for x in ids_text.split(",") if x.strip()})
+
+
+def parse_classification(reply_text: str) -> dict:
     """
-    Extract ad-sentence indices from the LLM reply.  Tolerates:
-      - surrounding chain-of-thought prose,
+    Extract ad / intro / outro sentence-id lists from the LLM reply.  Tolerates:
+      - chain-of-thought prose around the JSON,
       - markdown code fences,
-      - multiple JSON candidates (we take the LAST match — the final answer).
+      - a missing intro_sentences / outro_sentences key (treated as empty),
+      - multiple JSON candidates (last one wins; keys are matched independently).
+    Returns: {"ad": [...], "intro": [...], "outro": [...]}.
     """
     cleaned = reply_text.strip()
-    # Strip outer code fences if the whole reply is fenced
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
         if lines[-1].startswith("```"):
@@ -63,29 +68,53 @@ def parse_ad_sentences(reply_text: str) -> list[int]:
         else:
             cleaned = "\n".join(lines[1:])
 
-    matches = list(_AD_JSON_RE.finditer(cleaned))
-    if not matches:
-        # Last-ditch: maybe the LLM returned a bare JSON
+    by_key: dict[str, list[int]] = {}
+    for m in _LIST_RE.finditer(cleaned):
+        # Last occurrence wins (Step-4 line at the end of the reply).
+        by_key[m.group("key")] = _parse_id_list(m.group("ids"))
+
+    if not by_key:
+        # Fallback: maybe the model returned a bare JSON object.
         try:
             data = json.loads(cleaned)
-            return [int(x) for x in data.get("ad_sentences", [])]
+            for key in ("ad_sentences", "intro_sentences", "outro_sentences"):
+                if key in data:
+                    by_key[key] = sorted({int(x) for x in data[key]})
         except Exception as e:
             raise click.ClickException(
-                "Could not find {\"ad_sentences\": [...]} in the LLM reply. "
-                f"First 200 chars: {cleaned[:200]!r}"
+                'Could not find {"ad_sentences": [...], "intro_sentences": ...} '
+                f"in the LLM reply. First 200 chars: {cleaned[:200]!r}"
             ) from e
 
-    ids_text = matches[-1].group("ids")
-    ids = [int(x.strip()) for x in ids_text.split(",") if x.strip()]
-    # dedupe + sort
-    return sorted(set(ids))
+    if "ad_sentences" not in by_key:
+        raise click.ClickException(
+            'LLM reply lacks "ad_sentences" key. '
+            f"First 200 chars: {cleaned[:200]!r}"
+        )
+
+    # Ad takes priority — strip ad ids from intro/outro to keep categories disjoint.
+    ad_ids = set(by_key.get("ad_sentences", []))
+    intro_ids = set(by_key.get("intro_sentences", [])) - ad_ids
+    outro_ids = set(by_key.get("outro_sentences", [])) - ad_ids
+    return {
+        "ad": sorted(ad_ids),
+        "intro": sorted(intro_ids),
+        "outro": sorted(outro_ids),
+    }
 
 
-def ad_runs_from_sentences(sentences: list[dict], ad_ids: set[int]) -> list[tuple[float, float]]:
-    """Convert ad-sentence ids into time runs, merging when their gap is short."""
-    spans = sorted(
-        (s["start"], s["end"]) for s in sentences if s["i"] in ad_ids
-    )
+# Backwards-compat shim for any caller that still imports the old name.
+def parse_ad_sentences(reply_text: str) -> list[int]:
+    return parse_classification(reply_text)["ad"]
+
+
+def runs_from_sentences(
+    sentences: list[dict],
+    ids: set[int],
+    kind: str,
+) -> list[tuple[float, float, str]]:
+    """Convert sentence ids into typed time runs, merging across short gaps."""
+    spans = sorted((s["start"], s["end"]) for s in sentences if s["i"] in ids)
     if not spans:
         return []
     merged: list[list[float]] = [list(spans[0])]
@@ -94,30 +123,54 @@ def ad_runs_from_sentences(sentences: list[dict], ad_ids: set[int]) -> list[tupl
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
-    return [(s, e) for s, e in merged]
+    return [(s, e, kind) for s, e in merged]
+
+
+# Higher number = higher priority when grid cells overlap multiple kinds.
+_KIND_PRIORITY = {"ad": 3, "intro": 2, "outro": 2, "video_content": 0}
 
 
 def grid_blocks(
     duration: float,
-    ad_runs: list[tuple[float, float]],
+    typed_runs: list[tuple[float, float, str]],
     grid_s: float = GRID_S,
     overlap_threshold: float = OVERLAP_THRESHOLD,
 ) -> list[dict]:
-    """Slice the timeline into uniform `grid_s` blocks; mark ad if overlap >= threshold."""
+    """Slice the timeline into uniform `grid_s` blocks.
+
+    For each cell, accumulate per-kind overlap.  The cell's label is the kind
+    with highest overlap above `overlap_threshold`; ties broken by priority
+    (ad > intro/outro > content).  Cells with no qualifying overlap are
+    `video_content`.
+    """
     blocks = []
     t = 0.0
     while t < duration:
         end = min(t + grid_s, duration)
-        ov = 0.0
-        for r_start, r_end in ad_runs:
-            ov += max(0.0, min(end, r_end) - max(t, r_start))
-        is_ad = (ov / max(end - t, 1e-6)) >= overlap_threshold
+        cell_size = max(end - t, 1e-6)
+        per_kind: dict[str, float] = {}
+        for r_start, r_end, r_kind in typed_runs:
+            ov = max(0.0, min(end, r_end) - max(t, r_start))
+            if ov > 0:
+                per_kind[r_kind] = per_kind.get(r_kind, 0.0) + ov
+
+        best_kind = "video_content"
+        best_score = -1.0
+        for kind, ov in per_kind.items():
+            frac = ov / cell_size
+            if frac < overlap_threshold:
+                continue
+            score = (ov, _KIND_PRIORITY.get(kind, 1))
+            if score > (best_score, _KIND_PRIORITY.get(best_kind, -1)):
+                best_kind = kind
+                best_score = ov
+
         blocks.append({
             "start_seconds": t,
             "end_seconds": end,
             "duration_seconds": end - t,
-            "is_content": not is_ad,
-            "segment_type": "ad" if is_ad else "video_content",
+            "is_content": best_kind == "video_content",
+            "segment_type": best_kind,
             "confidence": 1.0,
         })
         t = end
@@ -176,11 +229,17 @@ def run_merge(
         duration = duration_audio
 
     reply_text = Path(labels_path).read_text()
-    ad_ids_list = parse_ad_sentences(reply_text)
-    ad_ids = set(ad_ids_list)
+    classification = parse_classification(reply_text)
+    ad_ids    = set(classification["ad"])
+    intro_ids = set(classification["intro"])
+    outro_ids = set(classification["outro"])
 
-    runs = ad_runs_from_sentences(sentences, ad_ids)
-    grid = grid_blocks(duration, runs)
+    typed_runs = (
+        runs_from_sentences(sentences, ad_ids,    "ad")
+        + runs_from_sentences(sentences, intro_ids, "intro")
+        + runs_from_sentences(sentences, outro_ids, "outro")
+    )
+    grid = grid_blocks(duration, typed_runs)
     classified = merge_consecutive(grid)
 
     result = build_output(video_path, metadata, classified)
@@ -188,19 +247,25 @@ def run_merge(
 
     if not quiet:
         print("=== llm_merge ===")
-        print(f"video duration:      {seconds_to_formatted(duration)}")
-        print(f"ad sentences (LLM):  {len(ad_ids)}  → {sorted(ad_ids)}")
-        print(f"ad runs (merged):    {len(runs)}")
-        for s, e in runs:
-            print(f"  [{seconds_to_formatted(s)} - {seconds_to_formatted(e)}]  ({e - s:.1f}s)")
-        print(f"timeline segments:   {len(result['timeline_segments'])} "
-              f"({result['num_ads_inserted']} ad / "
-              f"{len(result['timeline_segments']) - result['num_ads_inserted']} content)")
+        print(f"video duration:        {seconds_to_formatted(duration)}")
+        print(f"ad / intro / outro:    {len(ad_ids)} / {len(intro_ids)} / {len(outro_ids)} sentences")
+        for kind, ids in (("ad", ad_ids), ("intro", intro_ids), ("outro", outro_ids)):
+            runs = [r for r in typed_runs if r[2] == kind]
+            if not runs:
+                continue
+            print(f"  {kind} runs ({len(runs)}):")
+            for s, e, _k in runs:
+                print(f"    [{seconds_to_formatted(s)} - {seconds_to_formatted(e)}]  ({e - s:.1f}s)")
+        counts = {k: 0 for k in ("video_content", "ad", "intro", "outro")}
+        for seg in result["timeline_segments"]:
+            counts[seg["type"]] = counts.get(seg["type"], 0) + 1
+        summary = ", ".join(f"{counts[k]} {k}" for k in ("video_content", "ad", "intro", "outro") if counts.get(k))
+        print(f"timeline segments:     {len(result['timeline_segments'])}  ({summary})")
         print(f"output: {output_path}")
 
     return {
-        "ad_ids": sorted(ad_ids),
-        "ad_runs": runs,
+        "classification": classification,
+        "typed_runs": typed_runs,
         "output_path": output_path,
         "result": result,
     }

@@ -42,6 +42,14 @@ def build_output(
 
 
 def _build_timeline(classified_segments: list[dict]) -> list[dict]:
+    """Build timeline entries.
+
+    Segment `type` is taken from `seg["segment_type"]` when set, otherwise
+    derived from `is_content`.  Recognized types: "video_content", "ad",
+    "intro", "outro".  Only "ad" segments contribute to the original-video
+    time deflation (they're the ones that get removed when the user toggles
+    "Play Content Only"); intro/outro keep the same time mapping as content.
+    """
     timeline = []
     content_idx = 0
     nc_idx = 1
@@ -51,24 +59,11 @@ def _build_timeline(classified_segments: list[dict]) -> list[dict]:
         start = seg["start_seconds"]
         end = seg["end_seconds"]
         duration = seg["duration_seconds"]
+        seg_type = seg.get("segment_type") or ("video_content" if seg.get("is_content") else "ad")
 
         orig_start = start - acc_ad_dur
 
-        if seg["is_content"]:
-            orig_end = orig_start + duration
-            entry = {
-                "type": "video_content",
-                "segment_index": content_idx,
-                "final_video_start_seconds": round(start, 3),
-                "final_video_start_formatted": seconds_to_formatted(start),
-                "final_video_end_seconds": round(end, 3),
-                "final_video_end_formatted": seconds_to_formatted(end),
-                "duration_seconds": round(duration, 3),
-                "original_video_start_seconds": round(orig_start, 3),
-                "original_video_end_seconds": round(orig_end, 3),
-            }
-            content_idx += 1
-        else:
+        if seg_type == "ad":
             acc_ad_dur += duration
             entry = {
                 "type": "ad",
@@ -81,6 +76,20 @@ def _build_timeline(classified_segments: list[dict]) -> list[dict]:
                 "duration_seconds": round(duration, 3),
             }
             nc_idx += 1
+        else:
+            orig_end = orig_start + duration
+            entry = {
+                "type": seg_type,  # video_content | intro | outro
+                "segment_index": content_idx,
+                "final_video_start_seconds": round(start, 3),
+                "final_video_start_formatted": seconds_to_formatted(start),
+                "final_video_end_seconds": round(end, 3),
+                "final_video_end_formatted": seconds_to_formatted(end),
+                "duration_seconds": round(duration, 3),
+                "original_video_start_seconds": round(orig_start, 3),
+                "original_video_end_seconds": round(orig_end, 3),
+            }
+            content_idx += 1
 
         timeline.append(entry)
 
