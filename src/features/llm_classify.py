@@ -173,16 +173,9 @@ def main(
         cap = cv2.VideoCapture(video_path)
         sentences = index_data["sentences"]
         
+        last_screenshot_ts = -999.0
         for s in tqdm.tqdm(sentences, desc="Screenshots"):
             ts = s["start"]
-            cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
-            ret, frame = cap.read()
-            if not ret:
-                frame = np.zeros((288, 512, 3), dtype=np.uint8)
-                
-            frame = cv2.resize(frame, (512, 288))
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
-            b64 = base64.b64encode(buffer).decode('utf-8')
             
             if s["kind"] == "speech":
                 txt = f'S{s["i"]}: "{s["text"]}"\n'
@@ -190,8 +183,21 @@ def main(
                 ev = ", ".join(s["events"]) if s["events"] else "—"
                 txt = f'S{s["i"]}: [non-speech: {ev}, {s["end"] - s["start"]:.1f}s]\n'
                 
-            prompt_content.append({"type": "text", "text": f"Screenshot at {ts:.1f}s for S{s['i']}:"})
-            prompt_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "low"}})
+            # Rate limit mitigation: only send a screenshot if >= 3 seconds have passed
+            if ts - last_screenshot_ts >= 3.0:
+                cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
+                ret, frame = cap.read()
+                if not ret:
+                    frame = np.zeros((288, 512, 3), dtype=np.uint8)
+                    
+                frame = cv2.resize(frame, (512, 288))
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                b64 = base64.b64encode(buffer).decode('utf-8')
+                
+                prompt_content.append({"type": "text", "text": f"Screenshot around {ts:.1f}s:"})
+                prompt_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "low"}})
+                last_screenshot_ts = ts
+            
             prompt_content.append({"type": "text", "text": txt})
             
         cap.release()
